@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>memprobe</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<link rel="stylesheet" href="/static/styles/base.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/layout.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/upload.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/components.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/treemap.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/insights.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/table.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/diff.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/history.css?v={{ asset_version }}">
+<link rel="stylesheet" href="/static/styles/trend.css?v={{ asset_version }}">
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/" style="text-decoration:none;color:inherit">
+    <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="mpStrokeNav" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#5b9cf6"/>
+          <stop offset="100%" stop-color="#3dd68c"/>
+        </linearGradient>
+      </defs>
+      <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7"
+            fill="var(--bg2)" stroke="url(#mpStrokeNav)" stroke-width="1.5"/>
+      <rect x="6"  y="7"  width="20" height="5"  rx="1.4" fill="#5b9cf6"/>
+      <rect x="6"  y="14" width="14" height="5"  rx="1.4" fill="#3dd68c"/>
+      <rect x="6"  y="21" width="8"  height="5"  rx="1.4" fill="#f0a040"/>
+    </svg>
+    <div class="logo-wordmark">
+      <span class="logo-name">memprobe</span>
+    </div>
+  </a>
+  <div class="header-right">
+    <nav>
+      <button class="nav-btn active" onclick="showTab('analyze',this)">Analyze</button>
+      {% if is_authenticated %}
+      <button class="nav-btn" onclick="showTab('compare',this)" id="nav-compare">Compare</button>
+      <button class="nav-btn" onclick="showTab('projects',this)" id="nav-projects">Projects</button>
+      <button class="nav-btn" onclick="showTab('history',this)" id="nav-hist">History</button>
+      {% endif %}
+    </nav>
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle dark/light mode">
+      <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+      <svg id="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    {% if is_authenticated %}
+    <!-- User menu -->
+    <div class="user-menu" id="user-menu">
+      <button class="user-btn" onclick="toggleUserMenu()" title="Account">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <span>{{ first_name }}</span>
+      </button>
+      <div class="user-dropdown" id="user-dropdown">
+        <form method="POST" action="/logout" style="margin:0">
+          <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+          <button type="submit" class="user-dropdown-item signout-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Sign out
+          </button>
+        </form>
+        <a href="/account/delete" class="user-dropdown-item danger-item">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+          Delete account
+        </a>
+      </div>
+    </div>
+    {% else %}
+    <!-- Guest: sign in button -->
+    <a href="/login" class="guest-signin-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Sign in
+    </a>
+    {% endif %}
+  </div>
+</header>
+
+<!-- ══════════════════ ANALYZE TAB ══════════════════ -->
+<div id="tab-analyze" class="page visible">
+
+  <!-- Upload UI (hides after first result) -->
+  <div id="upload-ui" class="upload-page">
+    <div class="upload-inner">
+      <div class="hero">
+        <h2>Firmware memory analysis</h2>
+        {% if is_authenticated %}
+        <p>Pick a project to track builds over time, or run a one-time snapshot.</p>
+        {% else %}
+        <p>Drop a file to get a quick overview. <a href="/login" style="color:var(--accent);text-decoration:none">Sign in</a> to save history, compare builds, and more.</p>
+        {% endif %}
+      </div>
+
+      {% if is_authenticated %}
+      <!-- Step 1: Project picker -->
+      <div class="proj-step">
+        <div class="proj-step-label">Project</div>
+        <div class="proj-grid" id="proj-grid">
+          <!-- populated by JS -->
+        </div>
+        <div class="proj-or"><span>or</span></div>
+        <button class="proj-snapshot-btn" id="proj-snapshot-btn" onclick="selectProject(null)">
+          <div class="proj-snapshot-check">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <div class="proj-snapshot-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </div>
+          <div class="proj-snapshot-text">
+            <div class="proj-snapshot-title">One-time snapshot</div>
+            <div class="proj-snapshot-sub">Analyze without saving to any project.</div>
+          </div>
+        </button>
+      </div>
+      {% endif %}
+
+      <!-- Step 2: Upload -->
+      <div class="proj-context" id="proj-context">
+        <div class="proj-context-dot"></div>
+        <span>Adding build to</span>
+        <span class="proj-context-name" id="proj-context-name"></span>
+        <button onclick="clearProjectSelection()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;margin-left:auto;padding:0" title="Change project">Change</button>
+      </div>
+
+      <div class="drop-card" id="dz-a" onclick="document.getElementById('fi-a').click()">
+        <input type="file" id="fi-a" accept=".map,.elf,.axf" onchange="onPick('a',this)">
+        <div class="drop-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 12 15 15"/>
+          </svg>
+        </div>
+        <div class="drop-title">Drop firmware file here</div>
+        <div class="drop-sub">.elf &nbsp;·&nbsp; .axf &nbsp;·&nbsp; .map</div>
+        <div class="file-pill" id="fp-a"><div class="file-pill-dot"></div><span id="fn-a"></span></div>
+      </div>
+
+      <div class="budget-row" id="budget-row-a">
+        <div class="budget-field">
+          <label class="budget-label">Flash budget <span style="font-weight:400">(KB)</span></label>
+          <input class="budget-input" id="budget-flash" type="number" min="0" placeholder="e.g. 512" oninput="saveBudget()">
+        </div>
+        <div class="budget-field">
+          <label class="budget-label">RAM budget <span style="font-weight:400">(KB)</span></label>
+          <input class="budget-input" id="budget-ram" type="number" min="0" placeholder="e.g. 256" oninput="saveBudget()">
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btn-a" onclick="runAnalyze()" disabled>
+        <div class="spin" id="sp-a"></div>
+        <span id="bt-a">Analyze</span>
+      </button>
+      <div class="err-bar" id="err-a"></div>
+    </div>
+  </div>
+
+  <!-- Results (rendered inline) -->
+  <div id="results" class="results-wrap">
+    <div class="result-header">
+      <div>
+        <div class="result-title">Analysis</div>
+        <div class="result-file" id="res-filename"></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        {% if is_authenticated %}
+        <button class="btn-newfile" onclick="resetAnalyze()" title="Analyze a different file">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>New file</span>
+        </button>
+        {% else %}
+        <a href="/login" class="guest-cta-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Sign in for full access
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="kpi-row" id="kpi-row"></div>
+
+    {% if not is_authenticated %}
+    <div class="guest-cta-banner">
+      <div class="guest-cta-text">
+        <div class="guest-cta-title">Unlock the full analysis</div>
+        <div class="guest-cta-sub">Treemap, symbols, insights, build history, comparisons, exports, and sharing. Free.</div>
+      </div>
+      <a href="/login" class="guest-cta-btn guest-cta-btn-lg">
+        Sign in or create account
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+    </div>
+    {% endif %}
+
+    <!-- Analysis inner tabs -->
+    <div class="atab-bar">
+      <button class="atab-btn active" onclick="showAnalysisTab('overview',this)">Overview</button>
+      {% if is_authenticated %}
+      <button class="atab-btn" onclick="showAnalysisTab('treemap',this)">Treemap</button>
+      <button class="atab-btn" onclick="showAnalysisTab('symbols',this)">Symbols</button>
+      <button class="atab-btn" id="atab-insights-btn" onclick="showAnalysisTab('insights',this)">Insights</button>
+      <button class="atab-btn" onclick="showAnalysisTab('export',this)">Export &amp; share</button>
+      {% endif %}
+    </div>
+
+    <!-- Tab: Overview -->
+    <div class="atab-panel active" id="atab-overview">
+      <div class="card" id="card-binfo" style="display:none">
+        <div class="card-hd"><span class="card-title">Binary info</span></div>
+        <div class="binfo-grid" id="binfo-grid"></div>
+        <div id="binfo-segs"></div>
+      </div>
+      <div class="card" id="card-regions" style="display:none">
+        <div class="card-hd"><span class="card-title">Memory regions</span></div>
+        <div class="region-list" id="region-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">Sections</span>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="sec-rows" id="sec-rows"></div>
+        <button class="show-more-btn" id="sec-more" onclick="toggleAllSections()" style="display:none"></button>
+      </div>
+      <div class="card" id="card-libraries" style="display:none">
+        <div class="card-hd"><span class="card-title">Detected libraries</span></div>
+        <div class="tbl-wrap">
+          <div class="tbl-scroll">
+            <table id="lib-table" style="border-collapse:collapse;font-size:12px;width:100%">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border2)">
+                  <th style="padding:6px 10px;text-align:left;font-weight:600;color:var(--text2)">Library</th>
+                  <th style="padding:6px 10px;text-align:left;font-weight:600;color:var(--text2)">Category</th>
+                  <th style="padding:6px 10px;text-align:left;font-weight:600;color:var(--text2)">Flash</th>
+                  <th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--text2)">Symbols</th>
+                </tr>
+              </thead>
+              <tbody id="lib-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Treemap -->
+    <div class="atab-panel" id="atab-treemap">
+      <div class="card">
+        <div class="card-hd"><span class="card-title">Memory treemap</span></div>
+        <div class="breadcrumb" id="bc">
+          <span class="bc-link" onclick="tmZoomOut()">firmware</span>
+        </div>
+        <svg id="treemap-svg" height="500"></svg>
+        <div class="tm-no-syms" id="tm-no-syms" onclick="if(tmRawHistory.length){hideTmNoSyms();_tmDraw(tmRawHistory.pop());_tmUpdateBC();}" style="cursor:pointer">
+          No symbol data for this section.
+          <br><span style="font-size:11px;margin-top:4px;display:block">Click to go back.</span>
+        </div>
+        <div class="tm-hint" id="tm-hint">Click to drill in &nbsp;·&nbsp; Click background or breadcrumb to go back</div>
+        <div class="sym-panel" id="sym-panel"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Symbols -->
+    <div class="atab-panel" id="atab-symbols">
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">Symbol table</span>
+          <span id="sym-count" style="font-size:11px;color:var(--text3)"></span>
+        </div>
+      <div class="tbl-controls">
+        <input class="tbl-search" id="tbl-q" placeholder="Search symbols or files…" oninput="tblFilter()">
+        <select class="tbl-sel" id="tbl-sec" onchange="tblFilter()"><option value="">All sections</option></select>
+        <select class="tbl-sel" id="tbl-type" onchange="tblFilter()">
+          <option value="">All types</option>
+          <option value="text">text</option>
+          <option value="rodata">rodata</option>
+          <option value="data">data</option>
+          <option value="bss">bss</option>
+          <option value="other">other</option>
+        </select>
+        <label class="tbl-toggle-label">
+          <input type="checkbox" id="tbl-demangle" onchange="tblFilter()"> Demangle C++
+        </label>
+      </div>
+      <div class="tbl-wrap">
+        <div class="tbl-scroll">
+          <table class="sym-tbl">
+            <thead><tr>
+              <th data-c="name">Name<div class="col-resize-handle" data-col="0"></div></th>
+              <th data-c="size" id="th-size">Size<div class="col-resize-handle" data-col="1"></div></th>
+              <th data-c="section">Section<div class="col-resize-handle" data-col="2"></div></th>
+              <th data-c="source_location">Source<div class="col-resize-handle" data-col="3"></div></th>
+            </tr></thead>
+            <tbody id="sym-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="pg-info"></span>
+          <button id="pg-prev" onclick="pg(-1)">&#x2039;</button>
+          <button id="pg-next" onclick="pg(1)">&#x203a;</button>
+        </div>
+      </div>
+    </div>
+    </div><!-- /atab-symbols -->
+
+    <!-- Tab: Insights -->
+    <div class="atab-panel" id="atab-insights">
+      <div class="card" id="card-warnings" style="display:none">
+        <div class="card-hd"><span class="card-title">Warnings</span></div>
+        <div class="warn-list" id="warn-list"></div>
+      </div>
+      <div class="card" id="card-addrmap" style="display:none">
+        <div class="card-hd"><span class="card-title">Address space map</span></div>
+        <div id="addrmap-body"></div>
+      </div>
+      <div class="card" id="card-insights" style="display:none">
+        <div class="card-hd"><span class="card-title">Binary insights</span></div>
+        <div id="insights-body"></div>
+      </div>
+    </div><!-- /atab-insights -->
+    <div class="addr-tooltip" id="addr-tooltip"></div>
+
+    {% if is_authenticated %}
+    <!-- Tab: Export & share -->
+    <div class="atab-panel" id="atab-export">
+
+      <div class="card">
+        <div class="card-hd"><span class="card-title">Export analysis</span></div>
+        <div style="padding:20px">
+
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">What to include</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="binary_info" checked style="accent-color:var(--accent);cursor:pointer"> Binary info
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="regions" checked style="accent-color:var(--accent);cursor:pointer"> Memory regions
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="sections" checked style="accent-color:var(--accent);cursor:pointer"> Sections
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="symbols" checked style="accent-color:var(--accent);cursor:pointer"> Symbols
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="warnings" checked style="accent-color:var(--accent);cursor:pointer"> Warnings
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="insights" checked style="accent-color:var(--accent);cursor:pointer"> Insights
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="libraries" checked style="accent-color:var(--accent);cursor:pointer"> Detected libraries
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
+              <input type="checkbox" class="exp-part" value="treemap" style="accent-color:var(--accent);cursor:pointer"> Treemap data
+            </label>
+          </div>
+          <div style="font-size:12px;margin-bottom:22px">
+            <button onclick="exportSelectAll(true)" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;font-family:inherit">Select all</button>
+            <span style="color:var(--text3);margin:0 6px">·</span>
+            <button onclick="exportSelectAll(false)" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;font-family:inherit">Clear</button>
+          </div>
+
+          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Format</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="csv" style="accent-color:var(--accent);cursor:pointer"> CSV <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span>
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="xml" style="accent-color:var(--accent);cursor:pointer"> XML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.xml</span>
+            </label>
+          </div>
+
+          <div id="export-csv-note" style="display:none;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:16px">
+            CSV is tabular. Each selected section is exported as its own .csv, bundled in a .zip when more than one is chosen.
+          </div>
+
+          <button onclick="downloadExport()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(96,165,250,.25)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download export
+          </button>
+          <div class="err-bar" id="export-err"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-hd"><span class="card-title">Share a read-only link</span></div>
+        <div style="padding:20px">
+          <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px">
+            Generates a public URL that anyone can open. The link contains the same analysis you see here. No login required to view.
+          </div>
+          <button id="share-btn" onclick="shareAnalysis()" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 10px rgba(96,165,250,.25)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+            Create share link
+          </button>
+        </div>
+      </div>
+    </div><!-- /atab-export -->
+    {% endif %}
+
+  </div>
+</div>
+
+<!-- ══════════════════ HISTORY TAB ══════════════════ -->
+<div id="tab-history" class="page">
+  <div class="results-wrap">
+    <div class="result-header">
+      <div><div class="result-title">Build history</div></div>
+      <button class="btn-sm" onclick="clearHist()">Clear all</button>
+    </div>
+    <div id="hist-list"></div>
+  </div>
+</div>
+
+<!-- ══════════════════ PROJECTS TAB ══════════════════ -->
+<div id="tab-projects" class="page">
+  <div class="results-wrap">
+    <div class="result-header">
+      <div>
+        <div class="result-title">Projects</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">View build trends, set budgets, and manage all your projects.</div>
+      </div>
+      <button class="btn-sm" onclick="loadProjects()">Refresh</button>
+    </div>
+
+    <div id="projects-empty" style="display:none;text-align:center;padding:50px 20px;color:var(--text3);font-size:14px">
+      No projects yet. Pick or create a project when you analyze a file to start tracking it here.
+    </div>
+
+    <div id="projects-list"></div>
+
+    <!-- Hidden trend chart used by per-project expansion -->
+    <svg id="trend-chart" style="display:none"></svg>
+  </div>
+</div>
+<!-- ══════════════════ COMPARE TAB ══════════════════ -->
+<div id="tab-compare" class="page">
+  <div class="results-wrap">
+    <div class="result-header">
+      <div>
+        <div class="result-title">Compare</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">Side-by-side flash and RAM. With two builds, also shows symbol-level changes.</div>
+      </div>
+      <button class="btn-sm" id="cmp-reset-btn" onclick="cmpReset()" style="display:none">Reset</button>
+    </div>
+
+    <!-- Upload zone -->
+    <div id="cmp-upload-zone">
+
+      <div id="cmp-dropzone" style="margin-top:18px;padding:36px 24px;border:2px dashed var(--border2);border-radius:14px;text-align:center;background:var(--bg2);transition:border-color .15s, background .15s;cursor:pointer" onclick="document.getElementById('cmp-file-input').click()">
+        <div style="display:flex;justify-content:center;margin-bottom:14px">
+          <div style="position:relative;width:80px;height:54px">
+            <div style="position:absolute;left:0;top:0;width:46px;height:54px;background:var(--bg3);border:1.5px solid var(--border2);border-radius:6px;transform:rotate(-6deg)"></div>
+            <div style="position:absolute;right:0;top:0;width:46px;height:54px;background:var(--bg3);border:1.5px solid var(--accent);border-radius:6px;transform:rotate(6deg);box-shadow:0 4px 14px rgba(96,165,250,.18)"></div>
+          </div>
+        </div>
+        <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:5px">Drop firmware files to compare</div>
+        <div style="font-size:13px;color:var(--text3);margin-bottom:18px">Two or more .elf, .axf, or .map files. You can also add builds from your history.</div>
+        <div style="display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap" onclick="event.stopPropagation()">
+          <label class="btn-cmp-action" style="cursor:pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add file
+            <input type="file" id="cmp-file-input" accept=".elf,.axf,.map" multiple style="display:none" onchange="cmpAddFiles(this.files)">
+          </label>
+          <button class="btn-cmp-action" onclick="cmpFromHistory()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            From history
+          </button>
+        </div>
+      </div>
+
+      <!-- Selected builds -->
+      <div id="cmp-slots-wrap" style="margin-top:22px;display:none">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text3)">Selected builds</div>
+          <div id="cmp-slots-count" style="font-size:11px;color:var(--text3);padding:2px 8px;background:var(--bg3);border-radius:10px"></div>
+        </div>
+        <div id="cmp-file-list" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button class="btn-primary" onclick="runCompare()" id="cmp-run-btn" disabled style="padding:12px 28px;font-size:14px;font-weight:700">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-right:7px;vertical-align:middle"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <span id="cmp-run-label">Pick at least 2 builds</span>
+          </button>
+          <button class="btn-sm" onclick="cmpClearSlots()">Clear</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Results -->
+    <div id="cmp-results" style="display:none">
+
+      <!-- Flash / RAM summary cards -->
+      <div id="cmp-summary-cards" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px"></div>
+
+      <!-- Section size matrix -->
+      <div style="margin-bottom:8px;font-weight:600;font-size:13px">Section sizes</div>
+      <div style="overflow-x:auto;margin-bottom:24px">
+        <table id="cmp-section-table" style="border-collapse:collapse;font-size:12px;min-width:100%">
+          <thead id="cmp-section-head"></thead>
+          <tbody id="cmp-section-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Memory region bars -->
+      <div id="cmp-regions-wrap" style="margin-bottom:24px"></div>
+
+      <!-- Symbols that differ (3+ targets) -->
+      <div id="cmp-differing-wrap">
+        <div style="margin-bottom:8px;font-weight:600;font-size:13px">Symbols that differ across targets</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:8px">Only symbols whose size differs between at least two targets are shown.</div>
+        <div style="overflow-x:auto">
+          <table id="cmp-sym-table" style="border-collapse:collapse;font-size:12px;min-width:100%">
+            <thead id="cmp-sym-head"></thead>
+            <tbody id="cmp-sym-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Symbol delta (2-build only) -->
+      <div id="cmp-delta" style="display:none">
+        <div class="diff-kpi-row" id="cmp-diff-kpis"></div>
+        <div class="card" id="cmp-diff-sec-card" style="display:none">
+          <div class="card-hd"><span class="card-title">Section changes</span></div>
+          <div class="sec-diff-grid" id="cmp-diff-sec-grid"></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><span class="card-title">Symbol changes</span></div>
+          <div class="tbl-controls">
+            <input class="tbl-search" id="cmp-diff-q" placeholder="Search symbols..." oninput="cmpDiffFilter()">
+            <select class="tbl-sel" id="cmp-diff-kind" onchange="cmpDiffFilter()">
+              <option value="">All changes</option>
+              <option value="added">Added</option>
+              <option value="removed">Removed</option>
+              <option value="changed">Changed</option>
+            </select>
+          </div>
+          <div class="tbl-wrap">
+            <div class="tbl-scroll">
+              <table class="diff-tbl">
+                <thead><tr>
+                  <th>Kind</th>
+                  <th id="cdth-name">Name</th>
+                  <th id="cdth-old">Base</th>
+                  <th id="cdth-new">New</th>
+                  <th id="cdth-delta">Delta</th>
+                  <th>Object file</th>
+                </tr></thead>
+                <tbody id="cmp-diff-tbody"></tbody>
+              </table>
+            </div>
+            <div class="pager">
+              <span id="cdpg-info"></span>
+              <button id="cdpg-prev" onclick="cmpDpg(-1)">&#x2039;</button>
+              <button id="cdpg-next" onclick="cmpDpg(1)">&#x203a;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /cmp-results -->
+
+    <!-- History picker modal -->
+    <div id="cmp-hist-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;max-width:560px;width:95%;max-height:80vh;display:flex;flex-direction:column;gap:12px">
+        <div style="font-weight:600">Pick builds from history</div>
+        <div style="font-size:12px;color:var(--text3)">Hold Ctrl / Cmd to select multiple.</div>
+        <div style="overflow-y:auto;flex:1">
+          <table style="border-collapse:collapse;font-size:12px;width:100%">
+            <thead><tr style="border-bottom:1px solid var(--border)">
+              <th style="padding:4px 8px;text-align:left">ID</th>
+              <th style="padding:4px 8px;text-align:left">File</th>
+              <th style="padding:4px 8px;text-align:right">Flash</th>
+              <th style="padding:4px 8px;text-align:right">RAM</th>
+              <th style="padding:4px 8px;text-align:left">Date</th>
+            </tr></thead>
+            <tbody id="cmp-hist-rows"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn-sm" onclick="cmpHistCancel()">Cancel</button>
+          <button class="btn-primary" onclick="cmpHistConfirm()">Add selected</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="trend-tooltip" id="trend-tt"></div>
+
+<!-- Share modal -->
+<div id="share-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;align-items:center;justify-content:center" onclick="if(event.target===this)closeShareModal()">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:24px;max-width:460px;width:95%;display:flex;flex-direction:column;gap:14px">
+    <div style="font-weight:600;font-size:14px">Share analysis</div>
+    <div style="font-size:12px;color:var(--text2)">Anyone with this link can view the read-only analysis. No login required.</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="share-url-input" type="text" readonly onclick="this.select()"
+        style="flex:1;font-size:12px;padding:8px 10px;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;color:var(--text);outline:none;font-family:monospace">
+      <button class="btn-sm" id="share-copy-btn" onclick="copyShareUrl()">Copy</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn-sm" onclick="closeShareModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+{# Server-injected authentication state, consumed by auth-flag.js #}
+{{ is_authenticated|json_script:"auth-state" }}
+<script src="/static/scripts/auth-flag.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/utils.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/theme.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/tabs.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/upload.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/budget.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/project.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/analyze.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/address-map.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/sections.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/treemap.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/symbols.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/insights.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/history.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/trend.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/compare.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/export.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/init.js?v={{ asset_version }}"></script>
+{% if is_authenticated %}<script src="/static/scripts/user-menu.js?v={{ asset_version }}"></script>{% endif %}
+</body>
+</html>

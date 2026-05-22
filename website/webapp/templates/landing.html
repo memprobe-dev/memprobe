@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>memprobe</title>
+  <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+  <meta name="description" content="See where every byte goes. Drop in an ELF or linker map and get a full symbol breakdown in seconds.">
+  <link rel="stylesheet" href="/static/styles/base.css?v={{ asset_version }}">
+  <style>
+    body { display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
+
+    /* ── Ambient background ──────────────────────── */
+    .aurora { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .aurora::before, .aurora::after {
+      content: ""; position: absolute; border-radius: 50%; filter: blur(120px);
+      opacity: .55; animation: drift 22s ease-in-out infinite;
+    }
+    .aurora::before {
+      width: 540px; height: 540px; left: -120px; top: -160px;
+      background: radial-gradient(circle, rgba(91,156,246,.55), rgba(91,156,246,0) 70%);
+    }
+    .aurora::after {
+      width: 480px; height: 480px; right: -100px; top: 120px;
+      background: radial-gradient(circle, rgba(61,214,140,.32), rgba(61,214,140,0) 70%);
+      animation-delay: -10s; animation-duration: 28s;
+    }
+    [data-theme="light"] .aurora::before { opacity: .35; }
+    [data-theme="light"] .aurora::after  { opacity: .25; }
+    @keyframes drift {
+      0%,100% { transform: translate(0,0)    scale(1); }
+      33%     { transform: translate(40px,30px)  scale(1.05); }
+      66%     { transform: translate(-30px,40px) scale(.95); }
+    }
+
+    nav, section, footer { position: relative; z-index: 1; }
+
+    /* ── Nav ────────────────────────────────────── */
+    .lnav {
+      position: sticky; top: 0; z-index: 200;
+      background: var(--header-bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 32px; height: 54px;
+    }
+    .lnav-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); user-select: none; }
+    .lnav-logo svg.chip { width: 28px; height: 28px; flex-shrink: 0; }
+    .lnav-name { font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
+    .lnav-right { display: flex; align-items: center; gap: 8px; }
+    .lnav-cta {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; padding: 7px 18px; font-size: 13px; font-weight: 600;
+      cursor: pointer; text-decoration: none; line-height: 1;
+      transition: opacity .15s, transform .1s;
+    }
+    .lnav-cta:hover { opacity: .9; transform: translateY(-1px); }
+    .lnav-user {
+      display: flex; align-items: center; gap: 6px;
+      background: none; border: 1px solid var(--border2); border-radius: 7px;
+      color: var(--text2); cursor: pointer; padding: 5px 10px;
+      font-size: 12px; font-weight: 500; text-decoration: none;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    .lnav-user:hover { border-color: var(--accent); color: var(--text); background: var(--bg3); }
+    .theme-btn {
+      width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border2);
+      background: var(--bg3); color: var(--text2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, color .15s;
+    }
+    .theme-btn:hover { background: var(--bg4); color: var(--text); }
+
+    /* ── Hero (brand-led) ───────────────────────── */
+    .hero {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; padding: 80px 24px 40px;
+    }
+    .hero-inner { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: 100%; }
+
+    /* The brand mark - memprobe is the focal point of the page */
+    .brand {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      margin-bottom: 24px;
+    }
+    .brand-chip {
+      position: relative;
+      width: 72px; height: 72px;
+      margin-bottom: 22px;
+    }
+    .brand-chip::before {
+      content: ""; position: absolute; inset: -55%;
+      background:
+        radial-gradient(circle at 40% 50%, rgba(91,156,246,.55), rgba(91,156,246,0) 60%),
+        radial-gradient(circle at 60% 50%, rgba(61,214,140,.45), rgba(61,214,140,0) 60%);
+      filter: blur(18px);
+      animation: chipGlow 5s ease-in-out infinite;
+      z-index: 0;
+    }
+    .brand-chip svg { position: relative; z-index: 1; width: 100%; height: 100%; display: block; }
+    /* Pulse the memory blocks subtly */
+    .brand-chip svg .bar-a { animation: barPulse 3.4s ease-in-out infinite; transform-origin: 6px center; }
+    .brand-chip svg .bar-b { animation: barPulse 3.4s ease-in-out -.45s infinite; transform-origin: 6px center; }
+    .brand-chip svg .bar-c { animation: barPulse 3.4s ease-in-out -.9s  infinite; transform-origin: 6px center; }
+    @keyframes barPulse {
+      0%,100% { opacity: 1;    transform: scaleX(1); }
+      50%     { opacity: .55;  transform: scaleX(.92); }
+    }
+    @keyframes chipGlow {
+      0%,100% { opacity: .55; transform: scale(1); }
+      50%     { opacity: 1;   transform: scale(1.12); }
+    }
+
+    .brand-name {
+      font-size: clamp(64px, 11vw, 128px);
+      font-weight: 800;
+      letter-spacing: -.06em;
+      line-height: .95;
+      color: var(--text);
+      margin: 0;
+      text-shadow:
+        0 0 32px rgba(91,156,246,.28),
+        0 0 80px rgba(61,214,140,.18);
+    }
+    .brand-underline {
+      width: clamp(120px, 28%, 260px);
+      height: 3px;
+      margin-top: 18px;
+      border-radius: 3px;
+      background: linear-gradient(90deg,
+        rgba(91,156,246,0)   0%,
+        rgba(91,156,246,.85) 20%,
+        rgba(61,214,140,.85) 50%,
+        rgba(91,156,246,.85) 80%,
+        rgba(91,156,246,0)   100%);
+      background-size: 200% 100%;
+      animation: underlineFlow 6s linear infinite;
+    }
+    @keyframes underlineFlow {
+      0%   { background-position:   0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    .hero-tagline {
+      font-size: clamp(22px, 2.6vw, 30px);
+      font-weight: 600; letter-spacing: -.02em;
+      color: var(--text);
+      margin: 28px 0 12px;
+    }
+    .hero-sub {
+      font-size: clamp(14px, 1.6vw, 17px); color: var(--text2); line-height: 1.55;
+      max-width: 520px; margin-bottom: 32px;
+    }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-bottom: 24px; }
+
+    /* Primary button: animated multi-stop gradient body + duo-tone glow */
+    .btn-hero-primary {
+      position: relative;
+      color: #fff; text-decoration: none;
+      border-radius: 12px; padding: 14px 32px;
+      font-size: 15px; font-weight: 700; letter-spacing: -.005em;
+      display: inline-flex; align-items: center; gap: 9px;
+      background: linear-gradient(110deg,
+        #4a85d8 0%, #5b9cf6 25%, #6cb6ff 50%, #5b9cf6 75%, #4a85d8 100%);
+      background-size: 280% 100%;
+      animation: btnFlow 6s linear infinite;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.2) inset,
+        0 8px 22px rgba(91,156,246,.42),
+        0 14px 44px rgba(91,156,246,.22),
+        0 20px 60px rgba(61,214,140,.16);
+      transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+    }
+    .btn-hero-primary:hover {
+      transform: translateY(-2px); color: #fff;
+      filter: brightness(1.06);
+      box-shadow:
+        0 1px 0 rgba(255,255,255,.25) inset,
+        0 10px 28px rgba(91,156,246,.55),
+        0 18px 56px rgba(91,156,246,.3),
+        0 24px 72px rgba(61,214,140,.2);
+    }
+    @keyframes btnFlow {
+      0%   { background-position:   0% 50%; }
+      100% { background-position: 280% 50%; }
+    }
+    .btn-hero-secondary {
+      background: var(--bg3); color: var(--text2); text-decoration: none;
+      border: 1px solid var(--border2); border-radius: 12px; padding: 14px 26px;
+      font-size: 15px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 8px;
+      transition: background .15s, border-color .15s, color .15s, transform .12s;
+    }
+    .btn-hero-secondary:hover { background: var(--bg4); border-color: var(--accent); color: var(--text); transform: translateY(-2px); }
+
+    /* Single privacy claim with gradient hairline */
+    .privacy-claim {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 8px 16px;
+      background: var(--bg3); border-radius: 100px;
+      font-size: 12px; color: var(--text2);
+      max-width: 100%;
+    }
+    .privacy-claim::before {
+      content: ""; position: absolute; inset: 0; padding: 1px;
+      border-radius: 100px;
+      background: linear-gradient(90deg, rgba(91,156,246,.55), rgba(61,214,140,.45), rgba(91,156,246,0) 70%);
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+              mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      pointer-events: none;
+    }
+    .privacy-claim svg { color: var(--green); flex-shrink: 0; }
+    .privacy-claim strong { color: var(--text); font-weight: 600; }
+
+    /* ── Floating data chips (hero decoration) ───── */
+    .float-chips { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+    .fchip {
+      position: absolute;
+      display: inline-flex; align-items: center; gap: 7px;
+      background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 8px; padding: 6px 11px;
+      font-family: var(--mono); font-size: 12px; color: var(--text2);
+      box-shadow: 0 8px 24px rgba(0,0,0,.4);
+      white-space: nowrap;
+      animation: floatY 9s ease-in-out infinite;
+    }
+    .fchip .fc-dot { width: 7px; height: 7px; border-radius: 2px; }
+    .fchip .fc-num { color: var(--text); font-weight: 600; }
+    .fchip .fc-pos { color: var(--green); }
+    .fchip .fc-neg { color: var(--red); }
+    .fchip-1 { top: 12%; left: 5%;  animation-delay: -1s; }
+    .fchip-2 { top: 6%;  right: 7%; animation-delay: -3s; animation-duration: 11s; }
+    .fchip-3 { top: 40%; left: 2%;  animation-delay: -6s; animation-duration: 12s; }
+    .fchip-4 { top: 36%; right: 3%; animation-delay: -2s; animation-duration: 10s; }
+    .fchip-5 { top: 68%; left: 10%; animation-delay: -4s; animation-duration: 13s; }
+    .fchip-6 { top: 72%; right: 12%; animation-delay: -7s; animation-duration: 11s; }
+    @keyframes floatY {
+      0%,100% { transform: translateY(0); }
+      50%     { transform: translateY(-12px); }
+    }
+    @media (max-width: 980px) { .float-chips { display: none; } }
+
+    /* ── Demo window ─────────────────────────────── */
+    .demo-wrap {
+      position: relative;
+      width: 100%; max-width: 900px;
+      margin: 48px auto 0;
+      padding: 1.5px;
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .demo-wrap::before {
+      content: ""; position: absolute; inset: -50%;
+      background: conic-gradient(
+        from 0deg,
+        rgba(91,156,246,0)   0%,
+        rgba(91,156,246,.85) 12%,
+        rgba(61,214,140,.85) 22%,
+        rgba(91,156,246,0)   38%,
+        rgba(91,156,246,0)   62%,
+        rgba(240,160,64,.6)  74%,
+        rgba(91,156,246,.85) 86%,
+        rgba(91,156,246,0)   100%
+      );
+      animation: spin 9s linear infinite;
+      z-index: 0;
+    }
+    .stats-window {
+      position: relative; z-index: 1;
+      background: var(--bg2);
+      border-radius: 15px; overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .sw-bar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+    .sw-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .sw-filename { font-family: var(--mono); font-size: 11px; color: var(--text3); margin-left: 8px; }
+    .sw-body { padding: 24px; }
+    .sw-kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .sw-kpi { flex: 1; min-width: 130px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .sw-kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text3); margin-bottom: 6px; }
+    .sw-kpi-val { font-size: 22px; font-weight: 700; letter-spacing: -.03em; color: var(--text); line-height: 1; margin-bottom: 4px; }
+    .sw-kpi-sub { font-size: 11px; color: var(--text3); }
+    .sw-kpi-bar { height: 4px; border-radius: 2px; background: var(--bg4); margin-top: 10px; overflow: hidden; }
+    .sw-kpi-bar-fill { height: 100%; border-radius: 2px; }
+    .sw-section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--text3); margin-bottom: 10px; }
+    .sw-sym-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+    .sw-sym-row:last-child { border-bottom: none; }
+    .sw-sym-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+    .sw-sym-name { font-family: var(--mono); font-size: 12px; color: var(--text2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sw-sym-sec { font-size: 10px; color: var(--text3); font-family: var(--mono); width: 60px; flex-shrink: 0; }
+    .sw-sym-bar-wrap { width: 120px; height: 6px; background: var(--bg4); border-radius: 3px; flex-shrink: 0; overflow: hidden; }
+    .sw-sym-bar-fill { height: 100%; border-radius: 3px; }
+    .sw-sym-size { font-size: 12px; font-family: var(--mono); color: var(--text); text-align: right; width: 50px; flex-shrink: 0; }
+    .sw-warn { margin-top: 16px; background: rgba(240,160,64,.08); border: 1px solid rgba(240,160,64,.25); border-radius: 8px; padding: 10px 14px; display: flex; align-items: flex-start; gap: 10px; font-size: 12px; }
+    .sw-warn svg { color: var(--amber); margin-top: 1px; flex-shrink: 0; }
+    .sw-warn-text { color: var(--text2); line-height: 1.5; }
+    .sw-warn-text strong { color: var(--amber); font-weight: 600; }
+    .sw-example-badge {
+      font-size: 9px; font-weight: 800; letter-spacing: .12em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 100px;
+      background: rgba(91,156,246,.15); color: var(--accent);
+      border: 1px solid rgba(91,156,246,.3);
+      margin-left: auto;
+    }
+    .sw-kpi-bar-fill, .sw-sym-bar-fill { width: 0; transition: width 1.1s cubic-bezier(.22, 1, .36, 1); }
+    .sw-sym-row { opacity: 0; transform: translateY(6px); transition: opacity .45s ease, transform .45s ease; }
+    .is-playing .sw-sym-row { opacity: 1; transform: none; }
+    .is-playing .sw-sym-row[data-stagger="1"] { transition-delay: .25s; }
+    .is-playing .sw-sym-row[data-stagger="2"] { transition-delay: .35s; }
+    .is-playing .sw-sym-row[data-stagger="3"] { transition-delay: .45s; }
+    .is-playing .sw-sym-row[data-stagger="4"] { transition-delay: .55s; }
+    .is-playing .sw-sym-row[data-stagger="5"] { transition-delay: .65s; }
+    .is-playing .sw-warn { animation: warnPulse 2.4s ease-out 1.2s 1 both; }
+    @keyframes warnPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(240,160,64,0); }
+      40%      { box-shadow: 0 0 0 6px rgba(240,160,64,.16); }
+    }
+
+    /* ── Features grid ──────────────────────────── */
+    .features-section { padding: 56px 24px 56px; max-width: 1080px; margin: 0 auto; width: 100%; }
+    .section-head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 24px; flex-wrap: wrap; margin-bottom: 36px;
+    }
+    .section-head h2 {
+      font-size: clamp(28px, 3.2vw, 40px); font-weight: 800; letter-spacing: -.03em;
+      color: var(--text); line-height: 1.08; max-width: 640px;
+    }
+    .section-head .section-sub {
+      font-size: 14px; color: var(--text2); max-width: 300px; line-height: 1.6;
+    }
+
+    .feat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .feat-card {
+      position: relative;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      overflow: hidden;
+      opacity: var(--p, 1);
+      transform: translateY(calc((1 - var(--p, 1)) * 24px));
+      will-change: opacity, transform;
+      transition: border-color .25s ease, transform .35s ease;
+    }
+    .feat-card:hover { transform: translateY(calc((1 - var(--p, 1)) * 24px - 3px)); }
+    /* Gradient border is ALWAYS visible at low opacity and ALWAYS animating.
+       Hover just smoothly boosts opacity. No animation start/stop. */
+    .feat-card::before {
+      content: ""; position: absolute; inset: -1px;
+      border-radius: 14px; padding: 1px;
+      background: conic-gradient(
+        from var(--ang, 0deg),
+        rgba(91,156,246,.9),
+        rgba(61,214,140,.9),
+        rgba(91,156,246,.9),
+        transparent 60%,
+        rgba(91,156,246,.9)
+      );
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+              mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      opacity: .25;
+      animation: rotateBorder 8s linear infinite;
+      transition: opacity .4s ease;
+      pointer-events: none;
+    }
+    .feat-card:hover::before { opacity: 1; }
+    @keyframes rotateBorder { to { --ang: 360deg; } }
+    @property --ang { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+    .feat-icon {
+      width: 38px; height: 38px; border-radius: 9px;
+      background: linear-gradient(135deg, rgba(91,156,246,.2), rgba(61,214,140,.12));
+      border: 1px solid var(--border2);
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent); margin-bottom: 18px;
+    }
+    .feat-card h3 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; letter-spacing: -.015em; }
+    .feat-card p { font-size: 13px; color: var(--text2); line-height: 1.55; }
+
+    /* ── How it works ───────────────────────────── */
+    .how-section { padding: 32px 24px 56px; max-width: 1080px; margin: 0 auto; width: 100%; }
+    .how-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 18px; position: relative;
+    }
+    .how-step {
+      position: relative;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 14px; padding: 26px 22px;
+      opacity: var(--p, 1);
+      transform: translateY(calc((1 - var(--p, 1)) * 24px));
+      transition: transform .35s ease, border-color .25s ease;
+    }
+    .how-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 50%;
+      font-size: 15px; font-weight: 800; color: #fff;
+      background: linear-gradient(135deg, #5b9cf6, #3dd68c);
+      box-shadow: 0 6px 18px rgba(91,156,246,.35);
+      margin-bottom: 14px;
+    }
+    .how-step h3 { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; letter-spacing: -.015em; }
+    .how-step p { font-size: 13px; color: var(--text2); line-height: 1.55; }
+    /* connector arrows between cards on wide screens */
+    .how-step:not(:last-child)::after {
+      content: ""; position: absolute;
+      top: 44px; right: -14px; width: 28px; height: 2px;
+      background: linear-gradient(90deg, var(--border2), transparent);
+    }
+    @media (max-width: 880px) {
+      .how-grid { grid-template-columns: 1fr; }
+      .how-step:not(:last-child)::after { display: none; }
+    }
+
+    /* ── Final CTA ──────────────────────────────── */
+    .cta-section { padding: 24px 24px 88px; max-width: 1080px; margin: 0 auto; width: 100%; }
+    .cta-card {
+      position: relative;
+      border-radius: 20px;
+      padding: 56px 32px;
+      text-align: center;
+      overflow: hidden;
+      background:
+        radial-gradient(ellipse at 20% 30%, rgba(91,156,246,.25), transparent 55%),
+        radial-gradient(ellipse at 80% 70%, rgba(61,214,140,.22), transparent 55%),
+        linear-gradient(135deg, #161620, #0f0f15);
+      border: 1px solid var(--border);
+    }
+    .cta-card::before {
+      content: ""; position: absolute; inset: -1px;
+      border-radius: 20px; padding: 1.5px;
+      background: conic-gradient(
+        from var(--ang, 0deg),
+        rgba(91,156,246,.7),
+        rgba(61,214,140,.7),
+        rgba(240,160,64,.5),
+        rgba(91,156,246,.7));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+              mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude;
+      animation: rotateBorder 12s linear infinite;
+      pointer-events: none;
+    }
+    .cta-card h2 {
+      font-size: clamp(28px, 3.2vw, 40px); font-weight: 800;
+      letter-spacing: -.03em; color: var(--text);
+      margin-bottom: 12px; line-height: 1.1;
+    }
+    .cta-card p { font-size: 15px; color: var(--text2); max-width: 460px; margin: 0 auto 28px; line-height: 1.55; }
+
+    /* ── Footer ─────────────────────────────────── */
+    footer {
+      margin-top: auto; border-top: 1px solid var(--border);
+      padding: 22px 32px; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; color: var(--text3); flex-wrap: wrap; gap: 10px;
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .aurora::before, .aurora::after { animation: none; }
+      .demo-wrap::before { animation: none; }
+      .feat-card::before { animation: none; }
+      .cta-card::before { animation: none; }
+      .fchip { animation: none; }
+      .brand-chip::before, .brand-chip svg .bar-a, .brand-chip svg .bar-b, .brand-chip svg .bar-c { animation: none; }
+      .brand-underline { animation: none; }
+      .btn-hero-primary { animation: none; }
+      .sw-kpi-bar-fill, .sw-sym-bar-fill { transition: none; }
+      .sw-sym-row { opacity: 1; transform: none; transition: none; }
+      .is-playing .sw-warn { animation: none; }
+      .feat-card, .how-step { opacity: 1; transform: none; transition: none; }
+    }
+
+    /* Mobile */
+    @media (max-width: 680px) {
+      .lnav { padding: 0 16px; }
+      .hero { padding: 48px 16px 28px; }
+      .sw-body { padding: 14px; }
+      .sw-kpi-row { gap: 8px; }
+      .sw-sym-bar-wrap { display: none; }
+      .features-section, .how-section, .cta-section { padding-left: 16px; padding-right: 16px; }
+      .cta-card { padding: 40px 22px; }
+      footer { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="aurora" aria-hidden="true"></div>
+
+  <!-- Nav -->
+  <nav class="lnav">
+    <a class="lnav-logo" href="/">
+      <svg class="chip" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="navStroke" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#5b9cf6"/>
+            <stop offset="100%" stop-color="#3dd68c"/>
+          </linearGradient>
+        </defs>
+        <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7"
+              fill="var(--bg2)" stroke="url(#navStroke)" stroke-width="1.5"/>
+        <rect x="6"  y="7"  width="20" height="5"  rx="1.4" fill="#5b9cf6"/>
+        <rect x="6"  y="14" width="14" height="5"  rx="1.4" fill="#3dd68c"/>
+        <rect x="6"  y="21" width="8"  height="5"  rx="1.4" fill="#f0a040"/>
+      </svg>
+      <div><span class="lnav-name">memprobe</span></div>
+    </a>
+    <div class="lnav-right">
+      <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
+        <svg id="lnav-moon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+        <svg id="lnav-sun"  xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+      {% if is_authenticated %}
+      <a class="lnav-user" href="/app" title="Open memprobe">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{{ first_name|default:'Account' }}
+      </a>
+      {% else %}
+      <a class="lnav-cta" href="/login">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span>Sign in</span>
+      </a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+
+    <div class="float-chips" aria-hidden="true">
+      <div class="fchip fchip-1"><span class="fc-dot" style="background:var(--c-text)"></span>.text <span class="fc-num">187 KB</span></div>
+      <div class="fchip fchip-2"><span class="fc-dot" style="background:var(--c-rodata)"></span>.rodata <span class="fc-num">42 KB</span></div>
+      <div class="fchip fchip-3"><span class="fc-pos">+842 B</span></div>
+      <div class="fchip fchip-4"><span class="fc-dot" style="background:var(--c-bss)"></span>.bss <span class="fc-num">4.0 KB</span></div>
+      <div class="fchip fchip-5"><span class="fc-neg">-1.2 KB</span> last commit</div>
+      <div class="fchip fchip-6"><span class="fc-dot" style="background:var(--c-data)"></span>.data</div>
+    </div>
+
+    <div class="hero-inner">
+
+      <!-- Brand mark: this is the visual focal point -->
+      <div class="brand">
+        <div class="brand-chip" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="brandStroke" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#5b9cf6"/>
+                <stop offset="100%" stop-color="#3dd68c"/>
+              </linearGradient>
+            </defs>
+            <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7"
+                  fill="var(--bg2)" stroke="url(#brandStroke)" stroke-width="1.5"/>
+            <rect class="bar-a" x="6" y="7"  width="20" height="5" rx="1.4" fill="#5b9cf6"/>
+            <rect class="bar-b" x="6" y="14" width="14" height="5" rx="1.4" fill="#3dd68c"/>
+            <rect class="bar-c" x="6" y="21" width="8"  height="5" rx="1.4" fill="#f0a040"/>
+          </svg>
+        </div>
+        <h1 class="brand-name">memprobe</h1>
+        <div class="brand-underline" aria-hidden="true"></div>
+      </div>
+
+      <div class="hero-tagline">See where every byte goes.</div>
+      <p class="hero-sub">Drop in an ELF or linker map. Get a full symbol breakdown in seconds.</p>
+
+      <div class="hero-actions">
+        {% if is_authenticated %}
+        <a class="btn-hero-primary" href="/app">
+          Open memprobe
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+        {% else %}
+        <a class="btn-hero-primary" href="/login">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          <span>Sign in / Sign up</span>
+        </a>
+        <a class="btn-hero-secondary" href="/app">Try without account</a>
+        {% endif %}
+      </div>
+
+      <div class="privacy-claim">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span><strong>Your binaries stay in your session.</strong> Parsed in-memory, never stored.</span>
+      </div>
+
+      <div class="demo-wrap">
+        <div class="stats-window" id="demo-window">
+          <div class="sw-bar">
+            <div class="sw-dot" style="background:#f06060"></div>
+            <div class="sw-dot" style="background:#f0a040"></div>
+            <div class="sw-dot" style="background:#3dd68c"></div>
+            <span class="sw-filename">demo_firmware.elf</span>
+            <span class="sw-example-badge">Example</span>
+          </div>
+          <div class="sw-body">
+            <div class="sw-kpi-row">
+              <div class="sw-kpi">
+                <div class="sw-kpi-label">Flash used</div>
+                <div class="sw-kpi-val" data-count-to="187" data-suffix=" KB">0 KB</div>
+                <div class="sw-kpi-sub">of 512 KB (36%)</div>
+                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="36" style="background:var(--accent)"></div></div>
+              </div>
+              <div class="sw-kpi">
+                <div class="sw-kpi-label">RAM used</div>
+                <div class="sw-kpi-val" data-count-to="41" data-suffix=" KB">0 KB</div>
+                <div class="sw-kpi-sub">of 128 KB (32%)</div>
+                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="32" style="background:var(--green)"></div></div>
+              </div>
+              <div class="sw-kpi">
+                <div class="sw-kpi-label">Symbols</div>
+                <div class="sw-kpi-val" data-count-to="1842" data-comma="true">0</div>
+                <div class="sw-kpi-sub">across 38 source files</div>
+                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="60" style="background:var(--amber)"></div></div>
+              </div>
+              <div class="sw-kpi">
+                <div class="sw-kpi-label">Duplicate symbols</div>
+                <div class="sw-kpi-val" data-count-to="7">0</div>
+                <div class="sw-kpi-sub">~3.2 KB recoverable flash</div>
+                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="8" style="background:var(--red)"></div></div>
+              </div>
+            </div>
+
+            <div class="sw-section-title">Largest symbols by flash</div>
+            <div class="sw-sym-list">
+              <div class="sw-sym-row" data-stagger="1">
+                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
+                <span class="sw-sym-name">mbedtls_sha256_process</span>
+                <span class="sw-sym-sec">.text</span>
+                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="100" style="background:var(--c-text)"></div></div>
+                <span class="sw-sym-size">14.2 KB</span>
+              </div>
+              <div class="sw-sym-row" data-stagger="2">
+                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
+                <span class="sw-sym-name">HAL_UART_IRQHandler</span>
+                <span class="sw-sym-sec">.text</span>
+                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="62" style="background:var(--c-text)"></div></div>
+                <span class="sw-sym-size">8.8 KB</span>
+              </div>
+              <div class="sw-sym-row" data-stagger="3">
+                <div class="sw-sym-dot" style="background:var(--c-rodata)"></div>
+                <span class="sw-sym-name">font_DejaVuSans_16px</span>
+                <span class="sw-sym-sec">.rodata</span>
+                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="51" style="background:var(--c-rodata)"></div></div>
+                <span class="sw-sym-size">7.3 KB</span>
+              </div>
+              <div class="sw-sym-row" data-stagger="4">
+                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
+                <span class="sw-sym-name">lwip_tcp_input</span>
+                <span class="sw-sym-sec">.text</span>
+                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="38" style="background:var(--c-text)"></div></div>
+                <span class="sw-sym-size">5.4 KB</span>
+              </div>
+              <div class="sw-sym-row" data-stagger="5">
+                <div class="sw-sym-dot" style="background:var(--c-bss)"></div>
+                <span class="sw-sym-name">g_rx_dma_buffer</span>
+                <span class="sw-sym-sec">.bss</span>
+                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="28" style="background:var(--c-bss)"></div></div>
+                <span class="sw-sym-size">4.0 KB</span>
+              </div>
+            </div>
+
+            <div class="sw-warn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <div class="sw-warn-text"><strong>Float printf linked</strong> (_printf_float). ~8 KB flash. Drop <code style="font-family:var(--mono);font-size:11px">-u _printf_float</code> if unused.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features-section" id="features">
+    <div class="section-head">
+      <h2>Built for engineers who ship firmware.</h2>
+      <div class="section-sub">Find the bytes. Fix the bloat. Track every build.</div>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>Source line attribution</h3>
+        <p>DWARF maps every symbol back to its file and line. No grep.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <h3>Build diffs</h3>
+        <p>See which symbols grew, shrank, appeared, or disappeared between any two builds.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h3>Bloat warnings with fixes</h3>
+        <p>Catches float printf, exception tables, duplicate strings. Each warning tells you the exact flag to flip.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        </div>
+        <h3>Trends across commits</h3>
+        <p>Group builds by project, set budgets, watch flash and RAM over time.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        </div>
+        <h3>Interactive treemap</h3>
+        <p>Click to drill into any section or symbol. See what is actually packing your binary.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </div>
+        <h3>Share read-only links</h3>
+        <p>One click. An opaque URL. No login on the other end.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M9 9h6v6H9z"/></svg>
+        </div>
+        <h3>C++ and library aware</h3>
+        <p>Mangled names get demangled. Known libraries (mbedTLS, lwIP, FreeRTOS) grouped automatically.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <h3>Export anywhere</h3>
+        <p>JSON, CSV, TOML, or XML. Pipe it into your CI dashboard.</p>
+      </div>
+
+      <div class="feat-card" data-reveal>
+        <div class="feat-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h16"/></svg>
+        </div>
+        <h3>Speaks your toolchain</h3>
+        <p>GCC, Clang, IAR EWARM. ELF and AXF on ARM, RISC-V, Xtensa, AVR.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how-section" id="how">
+    <div class="section-head">
+      <h2>From binary to breakdown, in three steps.</h2>
+      <div class="section-sub">No CLI. No scripts. Browser only.</div>
+    </div>
+    <div class="how-grid">
+      <div class="how-step" data-reveal>
+        <div class="how-num">1</div>
+        <h3>Drop your file</h3>
+        <p>.elf, .axf, or linker .map. From GCC, Clang, or IAR. Any ARM, RISC-V, Xtensa, or AVR target.</p>
+      </div>
+      <div class="how-step" data-reveal>
+        <div class="how-num">2</div>
+        <h3>Parsed in your session</h3>
+        <p>Sections, symbols, DWARF debug info, library signatures. All in memory. Bytes never touch disk.</p>
+      </div>
+      <div class="how-step" data-reveal>
+        <div class="how-num">3</div>
+        <h3>Explore, diff, share</h3>
+        <p>Treemap, build diffs, trend charts. Save to a project or share a read-only link.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Final CTA -->
+  <section class="cta-section">
+    <div class="cta-card">
+      <h2>Stop guessing. Start measuring.</h2>
+      <p>Drop your firmware in. See where every byte lives.</p>
+      {% if is_authenticated %}
+      <a class="btn-hero-primary" href="/app">
+        Open memprobe
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </a>
+      {% else %}
+      <a class="btn-hero-primary" href="/login">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        <span>Sign in to get started</span>
+      </a>
+      {% endif %}
+    </div>
+  </section>
+
+  <footer>
+    <span>memprobe v{{ version }}</span>
+  </footer>
+
+  <script src="/static/scripts/landing.js?v={{ asset_version }}"></script>
+</body>
+</html>

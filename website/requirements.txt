@@ -1,0 +1,7 @@
+django>=4.2
+django-cors-headers>=4.3
+django-allauth[socialaccount]>=65.0
+python-dotenv>=1.0
+jinja2>=3.1
+certifi>=2024.0    # CA bundle for revoking OAuth grants over HTTPS
+# memprobe library — install from sibling directory: pip install -e ../memprobe

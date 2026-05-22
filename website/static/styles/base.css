@@ -1,0 +1,71 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:      #0c0c10;
+  --bg2:     #13131a;
+  --bg3:     #1a1a24;
+  --bg4:     #22222e;
+  --border:  #2a2a38;
+  --border2: #333344;
+  --text:    #f0f0fa;
+  --text2:   #8888aa;
+  --text3:   #44445a;
+  --accent:  #5b9cf6;
+  --accent2: #3a7be0;
+  --green:   #3dd68c;
+  --red:     #f06060;
+  --amber:   #f0a040;
+  --r:       10px;
+  --font:    -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  --mono:    'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  --header-bg: rgba(12,12,16,.88);
+  --shadow:    0 4px 24px rgba(0,0,0,.35);
+
+  --c-text:   #5b9cf6;
+  --c-rodata: #3dd68c;
+  --c-data:   #f0a040;
+  --c-bss:    #f06060;
+  --c-heap:   #a07ae0;
+  --c-stack:  #60a090;
+  --c-other:  #505068;
+}
+[data-theme="light"] {
+  --bg:      #f4f5f7;
+  --bg2:     #ffffff;
+  --bg3:     #eef0f4;
+  --bg4:     #e4e7ed;
+  --border:  #d8dce6;
+  --border2: #c8cdd8;
+  --text:    #111218;
+  --text2:   #52576a;
+  --text3:   #9298ad;
+  --accent:  #3a7be0;
+  --accent2: #2563c8;
+  --green:   #1a9e60;
+  --red:     #d84040;
+  --amber:   #c07010;
+  --header-bg: rgba(244,245,247,.92);
+  --shadow:    0 4px 24px rgba(0,0,0,.10);
+}
+
+html { scroll-behavior: smooth; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.55; min-height: 100vh; transition: background .25s, color .25s; }
+a { color: var(--accent); text-decoration: none; }
+button, input, select { font-family: var(--font); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+@keyframes fadeUp   { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+@keyframes fadeIn   { from { opacity:0; } to { opacity:1; } }
+@keyframes pulse    { 0%,100%{opacity:.6;} 50%{opacity:1;} }
+@keyframes shimmer  { from{background-position:-200% 0} to{background-position:200% 0} }
+@keyframes spinArc  { to { transform: rotate(360deg); } }
+@keyframes drawLine { from { stroke-dashoffset: 1000; } to { stroke-dashoffset: 0; } }
+
+.fade-up { animation: fadeUp .32s cubic-bezier(.22,.68,0,1.2) both; }
+.card { animation: fadeUp .3s ease both; }
+.card:nth-child(2) { animation-delay: .04s; }
+.card:nth-child(3) { animation-delay: .08s; }
+.card:nth-child(4) { animation-delay: .12s; }
+.card:nth-child(5) { animation-delay: .16s; }

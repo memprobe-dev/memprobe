@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · memprobe</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/styles/base.css">
+<script src="/static/scripts/theme-init.js"></script>
+<style>
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .login-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px 36px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  }
+
+  .login-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+    text-decoration: none;
+    color: inherit;
+  }
+  .login-logo svg.chip { width: 30px; height: 30px; }
+  .login-logo-name { font-size: 18px; font-weight: 700; letter-spacing: -.03em; }
+
+  .login-title {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    margin-bottom: 6px;
+  }
+  .login-sub {
+    font-size: 13px;
+    color: var(--text3);
+    margin-bottom: 28px;
+    line-height: 1.5;
+  }
+
+  .oauth-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 9px;
+    border: 1px solid var(--border2);
+    background: var(--bg3);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s, border-color .15s, transform .1s;
+    margin-bottom: 10px;
+  }
+  .oauth-btn:hover {
+    background: var(--bg4);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    color: var(--text);
+  }
+  .oauth-btn:active { transform: translateY(0); }
+  .oauth-btn svg { flex-shrink: 0; }
+  .oauth-btn span { flex: 1; text-align: center; }
+
+  .login-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 24px 0 20px;
+  }
+
+  .login-footer {
+    font-size: 11px;
+    color: var(--text3);
+    text-align: center;
+    line-height: 1.6;
+    margin-top: 24px;
+  }
+  .login-footer a { color: var(--text2); text-decoration: underline; }
+  .login-footer a:hover { color: var(--text); }
+
+  /* OAuth button - POST form to prevent CSRF on login initiation */
+  .oauth-form { margin: 0; }
+  .oauth-form input[type=hidden] {}
+
+  /* Subtle back link */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text3);
+    text-decoration: none;
+    margin-bottom: 24px;
+  }
+  .back-link:hover { color: var(--text2); }
+
+  /* Theme */
+  [data-theme="light"] body { background: #f8f8fa; }
+  [data-theme="light"] .login-card { box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+
+  <a class="login-logo" href="/">
+    <svg class="chip" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="3" width="16" height="26" rx="2.5" fill="var(--bg3)" stroke="var(--border2)" stroke-width="1"/>
+      <line x1="1" y1="9"  x2="8" y2="9"  stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="1" y1="16" x2="8" y2="16" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="1" y1="23" x2="8" y2="23" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="9"  x2="31" y2="9"  stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="16" x2="31" y2="16" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="23" x2="31" y2="23" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <rect x="10" y="6"  width="12" height="5" rx="1" fill="var(--c-text)"/>
+      <rect x="10" y="14" width="8"  height="5" rx="1" fill="var(--c-rodata)"/>
+      <rect x="10" y="22" width="4"  height="4" rx="1" fill="var(--c-data)"/>
+    </svg>
+    <span class="login-logo-name">memprobe</span>
+  </a>
+
+  <div class="login-title">Sign in to continue</div>
+  <div class="login-sub">Choose an account to sign in. No password needed.</div>
+
+  <!-- Google - POST form so state parameter is CSRF-protected -->
+  <form class="oauth-form" method="POST" action="/accounts/google/login/">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <button type="submit" class="oauth-btn">
+      <!-- Google logo -->
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+        <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+        <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
+        <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+        <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+      </svg>
+      <span>Continue with Google</span>
+    </button>
+  </form>
+
+  <!-- GitHub -->
+  <form class="oauth-form" method="POST" action="/accounts/github/login/">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next_url }}">
+    <button type="submit" class="oauth-btn">
+      <!-- GitHub mark -->
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+      </svg>
+      <span>Continue with GitHub</span>
+    </button>
+  </form>
+
+  <hr class="login-divider">
+
+  <div class="login-footer">
+    By signing in you agree to our terms.<br>
+    We only store your name and email from your OAuth provider.
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,14 @@
+.hist-row { display: flex; flex-direction: column; gap: 8px; }
+.hist-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+  animation: fadeUp .25s ease both;
+}
+.hist-card:hover { border-color: var(--accent); box-shadow: var(--shadow); transform: translateX(3px); }
+.hc-name { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.hc-meta { font-size: 11px; color: var(--text3); margin-top: 3px; }
+.hc-stats { display: flex; gap: 20px; flex-shrink: 0; }
+.hc-stat .v { font-weight: 700; font-size: 15px; }
+.hc-stat .l { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; }
+.hist-empty { color: var(--text3); text-align: center; padding: 60px; font-size: 14px; }

@@ -1,0 +1,31 @@
+.insights-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+.insights-section:last-child { border-bottom: none; padding-bottom: 0; }
+.insights-section:first-child { padding-top: 0; }
+.insights-label {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .12em; color: var(--text3); margin-bottom: 10px; display: block;
+}
+.ins-bar-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; margin-bottom: 5px;
+}
+.ins-bar-row:last-child { margin-bottom: 0; }
+.ins-bar-label { flex: 0 0 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text2); font-family: var(--mono); font-size: 11px; }
+.ins-bar-label.wide { flex: 0 0 200px; }
+.ins-bar-track { flex: 1; height: 7px; background: var(--bg4); border-radius: 3px; overflow: hidden; min-width: 60px; }
+.ins-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s ease; }
+.ins-bar.green { background: var(--green); }
+.ins-bar-stat { flex: 0 0 auto; color: var(--text2); font-family: var(--mono); font-size: 11px; text-align: right; min-width: 60px; }
+.ins-bar-count { flex: 0 0 40px; color: var(--text3); font-size: 11px; text-align: right; }
+.ins-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ins-tbl th { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; color: var(--text3); padding: 5px 10px 5px 0; border-bottom: 1px solid var(--border); text-align: left; font-weight: 700; }
+.ins-tbl td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--border); color: var(--text2); vertical-align: middle; }
+.ins-tbl tr:last-child td { border-bottom: none; }
+.ins-tbl tr:hover td { color: var(--text); }
+.ins-tbl .mono { font-family: var(--mono); }
+.ins-tbl .num  { text-align: right; font-family: var(--mono); color: var(--text); }
+.ins-tbl .name-cell { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); color: var(--text); }
+.ins-tbl .flash-cell { position: relative; min-width: 180px; }
+.ins-flash-bar { display: inline-block; height: 4px; background: var(--accent); border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.ins-show-all { background: none; border: none; color: var(--accent); font-size: 11px; cursor: pointer; padding: 6px 0 0; display: inline-block; }
+.ins-show-all:hover { text-decoration: underline; }

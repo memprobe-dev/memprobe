@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Sign-in error · memprobe</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/styles/base.css">
+<style>
+  body {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px; text-align: center;
+  }
+  .card {
+    background: var(--bg2); border: 1px solid #6a2020;
+    border-radius: 14px; padding: 36px 32px; max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  }
+  .icon {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(240,96,96,.15); color: var(--red);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 8px; }
+  p { font-size: 13px; color: var(--text2); line-height: 1.55; margin: 0 0 22px; }
+  .btn {
+    display: inline-block; padding: 10px 22px; border-radius: 8px;
+    background: var(--accent); color: #fff; text-decoration: none;
+    font-size: 13px; font-weight: 600;
+  }
+  .btn:hover { opacity: .88; color: #fff; }
+</style>
+</head>
+<body>
+
+{# Consume any queued messages silently #}
+{% if messages %}{% for _m in messages %}{% endfor %}{% endif %}
+
+<div class="card">
+  <div class="icon">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+      <line x1="12" y1="9" x2="12" y2="13"/>
+      <line x1="12" y1="17" x2="12.01" y2="17"/>
+    </svg>
+  </div>
+  <h1>Couldn't complete sign-in</h1>
+  <p>Something went wrong with the OAuth provider. Please try again. If it keeps happening, the provider's service may be down.</p>
+  <a class="btn" href="/login">Back to sign in</a>
+</div>
+
+<script>
+  (function () {
+    const t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>memprobe - {{ source_basename }}</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<style>
+  :root {
+    --bg:      #0f0f12;
+    --bg2:     #17171d;
+    --bg3:     #1f1f27;
+    --bg4:     #27272f;
+    --border:  #2e2e3a;
+    --text:    #eeeef8;
+    --text2:   #8080a0;
+    --text3:   #50507a;
+    --accent:  #4a9eff;
+    --radius:  10px;
+    --font:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono:    'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+    --c-text:   #4a9eff;
+    --c-rodata: #34c48a;
+    --c-data:   #e8a030;
+    --c-bss:    #e05858;
+    --c-heap:   #9070d0;
+    --c-stack:  #608070;
+    --c-other:  #505060;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#f4f4f8; --bg2:#ffffff; --bg3:#ececf2; --bg4:#e4e4ec;
+      --border:#d8d8e4; --text:#111118; --text2:#5a5a7a; --text3:#9090b0;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 14px; line-height: 1.5;
+  }
+
+  /* --- Header ---------------------------------------------------- */
+  header {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 20px 32px 18px;
+  }
+  .header-top { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .header-top h1 { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .08em; }
+  .filename { font-family: var(--mono); font-size: 15px; font-weight: 600; color: var(--text); }
+
+  .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .kpi {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 18px; min-width: 140px;
+  }
+  .kpi-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--text2); margin-bottom: 4px; }
+  .kpi-value { font-size: 22px; font-weight: 700; line-height: 1; }
+  .kpi-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+
+  /* --- Layout ---------------------------------------------------- */
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 24px 48px; }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px; margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .1em; color: var(--text2); margin-bottom: 16px;
+  }
+
+  /* --- Memory bars ----------------------------------------------- */
+  .region-grid { display: flex; flex-direction: column; gap: 14px; }
+  .region-row { display: grid; grid-template-columns: 72px 1fr 160px; gap: 12px; align-items: center; }
+  .region-name { font-weight: 600; font-size: 13px; }
+  .bar-track { background: var(--bg4); border-radius: 5px; height: 14px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; }
+  .bar-fill.flash { background: linear-gradient(90deg, #2a7fd4, #4a9eff); }
+  .bar-fill.ram   { background: linear-gradient(90deg, #1a8c5c, #34c48a); }
+  .bar-fill.other { background: linear-gradient(90deg, #505060, #707088); }
+  .region-stat { font-size: 12px; color: var(--text2); text-align: right; font-family: var(--mono); }
+  .region-stat strong { color: var(--text); font-size: 13px; }
+
+  /* --- Treemap --------------------------------------------------- */
+  .breadcrumb { font-size: 12px; color: var(--text2); margin-bottom: 10px; min-height: 18px; }
+  .breadcrumb .crumb { color: var(--accent); cursor: pointer; }
+  .breadcrumb .crumb:hover { text-decoration: underline; }
+  .breadcrumb .sep { margin: 0 5px; color: var(--text3); }
+  .breadcrumb .current { color: var(--text); }
+  #treemap { width: 100%; height: 520px; border-radius: 8px; overflow: hidden; background: var(--bg3); cursor: pointer; }
+  .treemap-hint { font-size: 11px; color: var(--text3); margin-top: 8px; text-align: right; }
+
+  /* --- Section legend -------------------------------------------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  /* --- Section bars ---------------------------------------------- */
+  .sec-list { display: flex; flex-direction: column; gap: 8px; }
+  .sec-row { display: grid; grid-template-columns: 140px 1fr 90px 70px; gap: 10px; align-items: center; }
+  .sec-name { font-family: var(--mono); font-size: 12px; }
+  .sec-bar-track { background: var(--bg4); border-radius: 3px; height: 8px; overflow: hidden; }
+  .sec-bar-fill { height: 100%; border-radius: 3px; }
+  .sec-size { font-size: 12px; font-family: var(--mono); text-align: right; color: var(--text2); }
+  .sec-pct  { font-size: 11px; text-align: right; color: var(--text3); }
+
+  /* --- Warnings -------------------------------------------------- */
+  .warn-item {
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .warn-item.warning { background: #1e1500; border: 1px solid #4a3000; }
+  .warn-item.info    { background: #001828; border: 1px solid #00304a; }
+  .warn-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+  .warn-body { flex: 1; }
+  .warn-msg { font-size: 13px; margin-bottom: 2px; }
+  .warn-fix { font-size: 12px; color: var(--text2); margin-top: 6px; }
+  details > summary { cursor: pointer; color: var(--text3); font-size: 11px; margin-top: 5px; list-style: none; }
+  details > summary::before { content: ''; display: inline-block; width: 0; height: 0; margin-right: 8px;
+    border-left: 5px solid var(--text3); border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+    vertical-align: middle; transform: translateY(-1px); }
+  details[open] > summary::before { content: ''; display: inline-block; width: 0; height: 0; margin-right: 8px;
+    border-top: 5px solid var(--text3); border-left: 4px solid transparent; border-right: 4px solid transparent;
+    vertical-align: middle; transform: translateY(-1px); }
+  details > p { color: var(--text2); font-size: 12px; margin-top: 6px; padding-left: 14px; }
+
+  /* --- Symbol table ---------------------------------------------- */
+  .table-controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  input[type=search], select {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none;
+    font-family: var(--font);
+  }
+  input[type=search] { flex: 1; min-width: 200px; }
+  input[type=search]:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--bg3); }
+
+  .table-wrap { overflow-x: auto; border-radius: 6px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { position: sticky; top: 0; z-index: 2; }
+  th {
+    background: var(--bg3); color: var(--text2); text-align: left;
+    padding: 9px 14px; cursor: pointer; user-select: none; white-space: nowrap;
+    border-bottom: 1px solid var(--border); font-weight: 600;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  }
+  th:hover { color: var(--text); }
+  th.sorted { color: var(--accent); }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3); }
+  .sym-name { font-family: var(--mono); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .size-cell { white-space: nowrap; }
+  .mini-bar { display: inline-block; height: 7px; border-radius: 2px; margin-right: 7px; vertical-align: middle; opacity: .85; }
+  .sec-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; font-family: var(--mono);
+    white-space: nowrap;
+  }
+  .obj-cell { color: var(--text2); font-size: 11px; font-family: var(--mono); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-cell { font-size: 11px; font-family: var(--mono); color: var(--text2); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .src-cell a { color: var(--accent); text-decoration: none; }
+  .src-cell a:hover { text-decoration: underline; }
+  .src-file { color: var(--text2); }
+  .src-line { color: var(--accent); font-weight: 600; }
+  .paginator { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text2); }
+  .paginator button {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    padding: 4px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-family: var(--font);
+  }
+  .paginator button:hover { border-color: var(--accent); }
+  .paginator button:disabled { opacity: .35; cursor: default; }
+
+  footer { text-align: center; color: var(--text3); font-size: 11px; padding: 16px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <h1>memprobe</h1>
+    <span style="color:var(--border)">·</span>
+    <span class="filename">{{ source_basename }}</span>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-label">Flash used</div>
+      <div class="kpi-value">{{ total_flash_human }}</div>
+      {% for r in regions %}{% if 'flash' in r.name.lower() and r.length > 0 %}
+      <div class="kpi-sub">{{ r.pct }}% of {{ r.length_human }}</div>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">RAM used</div>
+      <div class="kpi-value">{{ total_ram_human }}</div>
+      {% for r in regions %}{% if 'ram' in r.name.lower() and r.length > 0 %}
+      <div class="kpi-sub">{{ r.pct }}% of {{ r.length_human }}</div>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Sections</div>
+      <div class="kpi-value">{{ mmap.sections | length }}</div>
+      <div class="kpi-sub">{{ mmap.all_symbols | length }} symbols</div>
+    </div>
+    {% if warnings %}
+    <div class="kpi" style="border-color:#4a3000">
+      <div class="kpi-label" style="color:#e8a030">Warnings</div>
+      <div class="kpi-value" style="color:#e8a030">{{ warnings | length }}</div>
+      <div class="kpi-sub">bloat insights</div>
+    </div>
+    {% endif %}
+  </div>
+</header>
+
+<main>
+
+  <!-- Memory regions -->
+  {% if regions %}
+  <div class="card">
+    <div class="card-title">Memory regions</div>
+    <div class="region-grid">
+      {% for r in regions %}{% if r.length > 0 %}
+      <div class="region-row">
+        <span class="region-name">{{ r.name }}</span>
+        <div class="bar-track">
+          <div class="bar-fill {% if 'flash' in r.name.lower() %}flash{% elif 'ram' in r.name.lower() %}ram{% else %}other{% endif %}"
+               style="width:{{ [r.pct, 100] | min }}%"></div>
+        </div>
+        <div class="region-stat"><strong>{{ r.used_human }}</strong> / {{ r.length_human }} &nbsp; {{ r.pct }}%</div>
+      </div>
+      {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Section breakdown -->
+  <div class="card">
+    <div class="card-title">Sections</div>
+    <div class="sec-list" id="sec-list"></div>
+  </div>
+
+  <!-- Treemap -->
+  <div class="card">
+    <div class="card-title">Memory treemap</div>
+    <div class="breadcrumb" id="bc"><span class="current">firmware</span></div>
+    <div id="treemap"></div>
+    <div class="treemap-hint">Click a section to zoom · Click background to zoom out</div>
+  </div>
+
+  <!-- Warnings -->
+  {% if warnings %}
+  <div class="card">
+    <div class="card-title">Warnings &amp; insights</div>
+    {% for w in warnings %}
+    <div class="warn-item {{ w.level }}">
+      <div class="warn-icon">
+        {% if w.level == 'warning' %}
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        {% else %}
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        {% endif %}
+      </div>
+      <div class="warn-body">
+        <div class="warn-msg">{{ w.message }}</div>
+        {% if w.how_to_fix %}
+        <details><summary>How to fix</summary><p>{{ w.how_to_fix }}</p></details>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Symbol table -->
+  <div class="card">
+    <div class="card-title">Symbol table</div>
+    <div class="table-controls">
+      <input type="search" id="sym-search" placeholder="Search symbols or object files…">
+      <select id="sec-filter"><option value="">All sections</option></select>
+      <select id="type-filter">
+        <option value="">All types</option>
+        <option value="text">text</option>
+        <option value="rodata">rodata</option>
+        <option value="data">data</option>
+        <option value="bss">bss</option>
+        <option value="other">other</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table id="sym-table">
+        <thead><tr>
+          <th data-col="name">Name</th>
+          <th data-col="size" class="sorted">Size ↓</th>
+          <th data-col="section">Section</th>
+          <th data-col="object_file">Object file</th>
+          <th data-col="source_location">Source</th>
+        </tr></thead>
+        <tbody id="sym-tbody"></tbody>
+      </table>
+      <div class="paginator">
+        <span id="pg-info"></span>
+        <button id="pg-prev" onclick="changePage(-1)">‹</button>
+        <button id="pg-next" onclick="changePage(1)">›</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+<footer>memprobe v{{ version }} · {{ generated_at }}</footer>
+
+<script>
+// -- Data ------------------------------------------------------------------
+const TREE  = {{ treemap_data_json }};
+const SYMS  = {{ symbols_json }};
+const SECS  = {{ sections_json }};
+
+// -- Colors ----------------------------------------------------------------
+const TYPE_COLOR = {
+  text:   '#4a9eff',
+  rodata: '#34c48a',
+  data:   '#e8a030',
+  bss:    '#e05858',
+  heap:   '#9070d0',
+  stack:  '#608070',
+  other:  '#505060',
+};
+function typeColor(t) { return TYPE_COLOR[t] || TYPE_COLOR.other; }
+function hexAlpha(hex, a) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+// -- Section list ----------------------------------------------------------
+(function() {
+  const maxSz = Math.max(...SECS.map(s => s.size));
+  const total = SECS.reduce((a,s) => a+s.size, 0) || 1;
+  const el = document.getElementById('sec-list');
+  SECS.sort((a,b)=>b.size-a.size).forEach(s => {
+    const pct = (s.size/total*100).toFixed(1);
+    const barW = (s.size/maxSz*100).toFixed(1);
+    el.innerHTML += `<div class="sec-row">
+      <span class="sec-name">${esc(s.name)}</span>
+      <div class="sec-bar-track"><div class="sec-bar-fill" style="width:${barW}%;background:${s.color}"></div></div>
+      <span class="sec-size">${fmtBytes(s.size)}</span>
+      <span class="sec-pct">${pct}%</span>
+    </div>`;
+  });
+})();
+
+// -- Symbol table ----------------------------------------------------------
+const SEC_FILTER = document.getElementById('sec-filter');
+[...new Set(SYMS.map(s=>s.section))].sort().forEach(n => {
+  const o = document.createElement('option'); o.value=n; o.textContent=n; SEC_FILTER.appendChild(o);
+});
+
+const MAX_BAR = Math.max(...SYMS.map(s=>s.size)) || 1;
+let filtered = [...SYMS], sortCol='size', sortDir=-1, page=0;
+const PAGE=100;
+
+function renderTable() {
+  const q  = document.getElementById('sym-search').value.toLowerCase();
+  const sf = SEC_FILTER.value;
+  const tf = document.getElementById('type-filter').value;
+  filtered = SYMS.filter(s => {
+    if (sf && s.section !== sf) return false;
+    if (tf && s.type !== tf) return false;
+    if (q && !s.name.toLowerCase().includes(q) && !s.object_file.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  filtered.sort((a,b) => sortDir*(a[sortCol]>b[sortCol]?1:a[sortCol]<b[sortCol]?-1:0));
+
+  const pages = Math.max(1,Math.ceil(filtered.length/PAGE));
+  if (page>=pages) page=pages-1;
+  const slice = filtered.slice(page*PAGE,(page+1)*PAGE);
+  const tbody = document.getElementById('sym-tbody');
+  tbody.innerHTML='';
+  slice.forEach(s => {
+    const bw = Math.max(2, Math.round(s.size/MAX_BAR*60));
+    const col = typeColor(s.type);
+    const badge_bg = hexAlpha(col, 0.18);
+    const obj = s.library ? `${esc(s.library)} › ${esc(s.object_file)}` : esc(s.object_file);
+    const srcCell = fmtSource(s.source_location);
+    tbody.innerHTML += `<tr>
+      <td><span class="sym-name" title="${esc(s.name)}">${esc(s.name)}</span></td>
+      <td class="size-cell"><span class="mini-bar" style="width:${bw}px;background:${col}"></span>${s.size.toLocaleString()}</td>
+      <td><span class="sec-badge" style="background:${badge_bg};color:${col}">${esc(s.section)}</span></td>
+      <td><span class="obj-cell" title="${esc(s.object_file)}">${obj}</span></td>
+      <td><span class="src-cell" title="${esc(s.source_location||'')}">${srcCell}</span></td>
+    </tr>`;
+  });
+  document.getElementById('pg-info').textContent = `${page*PAGE+1}–${Math.min((page+1)*PAGE,filtered.length)} of ${filtered.length.toLocaleString()}`;
+  document.getElementById('pg-prev').disabled = page===0;
+  document.getElementById('pg-next').disabled = page>=pages-1;
+}
+function changePage(d){page+=d;renderTable();}
+['sym-search','sec-filter','type-filter'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{page=0;renderTable();}));
+document.querySelectorAll('#sym-table th[data-col]').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const c=th.dataset.col;
+    sortDir = c===sortCol ? -sortDir : (c==='size'?-1:1);
+    sortCol=c;
+    document.querySelectorAll('#sym-table th').forEach(h=>h.classList.remove('sorted'));
+    th.classList.add('sorted');
+    page=0; renderTable();
+  });
+});
+renderTable();
+
+// -- D3 Treemap ------------------------------------------------------------
+(function() {
+  const container = document.getElementById('treemap');
+  const W = container.clientWidth || 900, H = 520;
+
+  // Assign colors to tree nodes
+  function colorNode(node) {
+    const t = node.data.type || 'other';
+    return typeColor(t);
+  }
+
+  // Build d3 hierarchy
+  function makeHierarchy(data) {
+    return d3.hierarchy(data, d => d.children)
+      .sum(d => d.children ? 0 : (d.size_bytes || 0))
+      .sort((a,b) => b.value - a.value);
+  }
+
+  const svg = d3.select('#treemap')
+    .append('svg')
+    .attr('width', '100%')
+    .attr('height', H)
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .style('display','block');
+
+  const g = svg.append('g');
+  let currentRoot = makeHierarchy(TREE);
+  let displayRoot = currentRoot;
+  const crumbs = [];
+
+  function draw(root) {
+    displayRoot = root;
+
+    d3.treemap()
+      .size([W, H])
+      .paddingOuter(3)
+      .paddingTop(root === currentRoot ? 0 : 18)
+      .paddingInner(2)
+      .round(true)
+      .tile(d3.treemapSquarify.ratio(1.6))
+      (root);
+
+    g.selectAll('*').remove();
+
+    const leaf = g.selectAll('g.leaf')
+      .data(root.leaves())
+      .join('g')
+      .attr('class','leaf')
+      .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+    leaf.append('rect')
+      .attr('width',  d => Math.max(0, d.x1-d.x0))
+      .attr('height', d => Math.max(0, d.y1-d.y0))
+      .attr('rx', 3)
+      .attr('fill', d => colorNode(d))
+      .attr('fill-opacity', 0.8)
+      .attr('stroke', '#0f0f12')
+      .attr('stroke-width', 1.5)
+      .style('cursor', d => d.parent !== root ? 'pointer' : 'default');
+
+    // Labels
+    leaf.each(function(d) {
+      const rw = d.x1-d.x0, rh = d.y1-d.y0;
+      if (rw < 28 || rh < 16) return;
+      const sel = d3.select(this);
+      const col = colorNode(d);
+      const lum = luminance(col);
+      const fg  = lum > 0.35 ? '#111' : '#fff';
+      const maxChars = Math.floor(rw / 7);
+      let label = d.data.name;
+      if (label.length > maxChars) label = label.slice(0, maxChars-1) + '…';
+
+      sel.append('text')
+        .attr('x', 5).attr('y', 14)
+        .attr('fill', fg).attr('fill-opacity', 0.95)
+        .attr('font-size', Math.min(12, rh / 2.4))
+        .attr('font-family', "'SF Mono','Fira Code',monospace")
+        .text(label);
+
+      if (rh > 30 && d.value) {
+        sel.append('text')
+          .attr('x', 5).attr('y', 26)
+          .attr('fill', fg).attr('fill-opacity', 0.55)
+          .attr('font-size', 10)
+          .text(fmtBytes(d.value));
+      }
+    });
+
+    // Hover tooltips via title
+    leaf.append('title')
+      .text(d => {
+        let tip = `${d.data.name}\n${fmtBytes(d.value)}`;
+        if (d.data.object_file) tip += `\n${d.data.object_file}`;
+        if (d.data.source_location) tip += `\n@ ${d.data.source_location}`;
+        return tip;
+      });
+
+    // Click to zoom into section groups
+    const sectionGroups = g.selectAll('g.secgroup')
+      .data(root.children || [])
+      .join('g')
+      .attr('class','secgroup')
+      .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+    sectionGroups.append('rect')
+      .attr('width',  d => Math.max(0, d.x1-d.x0))
+      .attr('height', d => Math.max(0, d.y1-d.y0))
+      .attr('fill', 'transparent')
+      .style('cursor', d => d.children ? 'pointer' : 'default')
+      .on('click', (event, d) => {
+        if (d.children) {
+          crumbs.push(root);
+          draw(d);
+          updateBC();
+        }
+      });
+
+    // Back click on background
+    svg.on('click', (event) => {
+      if (event.target === svg.node() || event.target === g.node()) {
+        if (crumbs.length) { draw(crumbs.pop()); updateBC(); }
+      }
+    });
+  }
+
+  function updateBC() {
+    const bc = document.getElementById('bc');
+    bc.innerHTML = '';
+    const all = [currentRoot, ...crumbs.slice(1), displayRoot !== currentRoot ? displayRoot : null].filter(Boolean);
+
+    const addCrumb = (node, isCurrent) => {
+      const label = node === currentRoot ? 'firmware' : node.data.name;
+      if (isCurrent) {
+        bc.innerHTML += `<span class="current">${esc(label)}</span>`;
+      } else {
+        const sp = document.createElement('span');
+        sp.className = 'crumb'; sp.textContent = label;
+        sp.onclick = () => {
+          const idx = crumbs.indexOf(node);
+          if (idx >= 0) { crumbs.length = idx; draw(node); updateBC(); }
+          else { crumbs.length = 0; draw(currentRoot); updateBC(); }
+        };
+        bc.appendChild(sp);
+      }
+    };
+
+    crumbs.forEach((n, i) => {
+      if (i > 0) bc.innerHTML += '<span class="sep">›</span>';
+      addCrumb(n === currentRoot ? currentRoot : n, false);
+    });
+    if (displayRoot !== currentRoot) {
+      if (crumbs.length) bc.innerHTML += '<span class="sep">›</span>';
+      bc.innerHTML += `<span class="current">${esc(displayRoot.data.name)}</span>`;
+    }
+    if (!crumbs.length && displayRoot === currentRoot) {
+      bc.innerHTML = '<span class="current">firmware</span>';
+    }
+  }
+
+  draw(currentRoot);
+  updateBC();
+
+  // Resize
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const nw = container.clientWidth || 900;
+      svg.attr('viewBox', `0 0 ${nw} ${H}`);
+      draw(displayRoot);
+    }, 120);
+  });
+})();
+
+// -- Utilities -------------------------------------------------------------
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  if (n >= 1048576) return (n/1048576).toFixed(2) + ' MB';
+  if (n >= 1024)    return (n/1024).toFixed(1)    + ' KB';
+  return n + ' B';
+}
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtSource(loc) {
+  if (!loc) return '<span style="color:var(--text3)">-</span>';
+  const colonIdx = loc.lastIndexOf(':');
+  if (colonIdx < 0) return `<span class="src-file">${esc(loc)}</span>`;
+  const file = loc.slice(0, colonIdx);
+  const line = loc.slice(colonIdx + 1);
+  // Show only the last two path components to keep it compact
+  const parts = file.split('/');
+  const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : file;
+  return `<span class="src-file" title="${esc(file)}">${esc(short)}</span><span style="color:var(--text3)">:</span><span class="src-line">${esc(line)}</span>`;
+}
+function luminance(hex) {
+  if (!hex || hex[0]!=='#') return 0;
+  const r=parseInt(hex.slice(1,3),16)/255;
+  const g=parseInt(hex.slice(3,5),16)/255;
+  const b=parseInt(hex.slice(5,7),16)/255;
+  const toL = c => c<=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4);
+  return 0.2126*toL(r) + 0.7152*toL(g) + 0.0722*toL(b);
+}
+</script>
+</body>
+</html>

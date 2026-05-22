@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Delete account · memprobe</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/styles/base.css">
+<script src="/static/scripts/theme-init.js"></script>
+<style>
+  body {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px;
+  }
+  .danger-card {
+    background: var(--bg2);
+    border: 1px solid #6a2020;
+    border-radius: 14px;
+    padding: 36px 32px;
+    width: 100%; max-width: 520px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  }
+  .danger-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .danger-icon {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(240,96,96,.15);
+    color: var(--red);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  h1 {
+    font-size: 19px; font-weight: 700;
+    letter-spacing: -.02em; margin: 0;
+  }
+  .danger-sub {
+    font-size: 13px; color: var(--text2);
+    line-height: 1.55; margin-bottom: 22px;
+  }
+  .danger-list {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px;
+    margin-bottom: 22px;
+  }
+  .danger-list-title {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .1em;
+    color: var(--text3); margin-bottom: 10px;
+  }
+  .danger-list ul {
+    margin: 0; padding-left: 18px;
+    font-size: 13px; color: var(--text2); line-height: 1.7;
+  }
+  .danger-list strong { color: var(--text); }
+  .confirm-field {
+    margin-bottom: 18px;
+  }
+  .confirm-label {
+    font-size: 12px; color: var(--text2); margin-bottom: 6px;
+    display: block;
+  }
+  .confirm-label code {
+    font-family: var(--mono); background: var(--bg4);
+    padding: 1px 6px; border-radius: 4px; color: var(--red);
+    font-size: 12px; font-weight: 600;
+  }
+  .confirm-input {
+    width: 100%; padding: 10px 12px;
+    background: var(--bg3); color: var(--text);
+    border: 1px solid var(--border2); border-radius: 8px;
+    font-size: 13px; font-family: var(--mono);
+    box-sizing: border-box;
+  }
+  .confirm-input:focus { outline: none; border-color: var(--red); }
+  .row {
+    display: flex; gap: 10px; justify-content: flex-end;
+  }
+  .btn-cancel {
+    padding: 10px 18px; border-radius: 8px;
+    background: var(--bg3); color: var(--text2);
+    border: 1px solid var(--border2);
+    font-size: 13px; font-weight: 500;
+    text-decoration: none; cursor: pointer;
+  }
+  .btn-cancel:hover {
+    color: var(--text); border-color: var(--text3);
+  }
+  .btn-delete {
+    padding: 10px 18px; border-radius: 8px;
+    background: var(--red); color: #fff;
+    border: none; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-delete:disabled {
+    opacity: .35; cursor: not-allowed;
+  }
+  .btn-delete:not(:disabled):hover { opacity: .88; }
+  .meta {
+    font-size: 11px; color: var(--text3);
+    text-align: center; margin-top: 20px; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="danger-card">
+  <div class="danger-header">
+    <div class="danger-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+    </div>
+    <h1>Delete your account</h1>
+  </div>
+
+  <p class="danger-sub">
+    This action is <strong>permanent and cannot be undone</strong>. Once submitted, your account and all associated data are removed immediately.
+  </p>
+
+  <div class="danger-list">
+    <div class="danger-list-title">What gets deleted</div>
+    <ul>
+      <li>Your account <strong>{{ user.email }}</strong></li>
+      <li>All data associated with your account</li>
+      <li>All build history you've uploaded</li>
+      <li>All projects you've created</li>
+      <li>All share links you've generated</li>
+      <li>Your OAuth identity link to Google / GitHub on memprobe</li>
+      <li>The OAuth authorization at Google / GitHub itself, so future sign-ins require fresh consent</li>
+    </ul>
+  </div>
+
+  <form method="POST" action="/account/delete">
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+    <div class="confirm-field">
+      <label class="confirm-label" for="confirm-input">
+        Type <code>DELETE</code> to confirm:
+      </label>
+      <input
+        class="confirm-input"
+        id="confirm-input"
+        name="confirm"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        oninput="deleteAccountInput(this)"
+      >
+    </div>
+
+    <div class="row">
+      <a href="/app" class="btn-cancel">Cancel</a>
+      <button type="submit" class="btn-delete" id="btn-delete" disabled>
+        Delete account permanently
+      </button>
+    </div>
+  </form>
+</div>
+
+<script src="/static/scripts/delete-account.js"></script>
+
+</body>
+</html>

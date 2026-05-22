@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ filename }} - memprobe</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<link rel="stylesheet" href="/static/styles/base.css">
+<link rel="stylesheet" href="/static/styles/layout.css">
+<link rel="stylesheet" href="/static/styles/components.css">
+<link rel="stylesheet" href="/static/styles/treemap.css">
+<link rel="stylesheet" href="/static/styles/insights.css">
+<link rel="stylesheet" href="/static/styles/table.css">
+<link rel="stylesheet" href="/static/styles/diff.css">
+</head>
+<body>
+
+<header>
+  <a class="logo" href="/" style="text-decoration:none;color:inherit">
+    <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="3" width="16" height="26" rx="2.5" fill="var(--bg3)" stroke="var(--border2)" stroke-width="1"/>
+      <line x1="1" y1="9"  x2="8" y2="9"  stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="1" y1="16" x2="8" y2="16" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="1" y1="23" x2="8" y2="23" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="9"  x2="31" y2="9"  stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="16" x2="31" y2="16" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="24" y1="23" x2="31" y2="23" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+      <rect x="10" y="6"  width="12" height="5" rx="1" fill="var(--c-text)"/>
+      <rect x="10" y="14" width="8"  height="5" rx="1" fill="var(--c-rodata)"/>
+      <rect x="10" y="22" width="4"  height="4" rx="1" fill="var(--c-data)"/>
+    </svg>
+    <div class="logo-wordmark">
+      <span class="logo-name">memprobe</span>
+    </div>
+  </a>
+  <div class="header-right">
+    <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">shared analysis</div>
+    <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle theme">
+      <svg id="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+      <svg id="theme-icon-sun"  xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="results-wrap">
+  <div class="result-header">
+    <div>
+      <div class="result-title">Shared analysis</div>
+      <div class="result-file" id="share-filename"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px">Shared on {{ created_at }}</div>
+    </div>
+    <a href="/app" class="btn-sm" style="text-decoration:none">Analyze your own file</a>
+  </div>
+
+  <!-- KPI row -->
+  <div class="kpi-row" id="share-kpis" style="margin-bottom:20px"></div>
+
+  <!-- Warnings -->
+  <div id="share-warnings" style="margin-bottom:14px"></div>
+
+  <!-- Analysis sub-tabs -->
+  <div class="atab-bar">
+    <button class="atab-btn active" onclick="shareTab('overview',this)">Overview</button>
+    <button class="atab-btn" onclick="shareTab('symbols',this)">Symbols</button>
+    <button class="atab-btn" onclick="shareTab('insights',this)">Insights</button>
+  </div>
+
+  <!-- Overview -->
+  <div class="atab-panel active" id="satab-overview">
+    <div class="card" id="card-addrmap" style="display:none">
+      <div class="card-hd"><span class="card-title">Address space map</span></div>
+      <div id="addrmap-body"></div>
+    </div>
+    <div class="card" id="share-treemap-card">
+      <div class="card-hd">
+        <span class="card-title">Memory treemap</span>
+      </div>
+      <div class="breadcrumb" id="bc">
+        <span class="bc-link" onclick="tmZoomOut()">firmware</span>
+      </div>
+      <svg id="treemap-svg" height="500"></svg>
+      <div class="tm-no-syms" id="tm-no-syms" onclick="if(tmRawHistory.length){hideTmNoSyms();_tmDraw(tmRawHistory.pop());_tmUpdateBC();}" style="cursor:pointer">
+        No symbol data for this section.<br><span style="font-size:11px;margin-top:4px;display:block">Click to go back.</span>
+      </div>
+      <div class="tm-hint" id="tm-hint">Click to drill in &nbsp;·&nbsp; Click background or breadcrumb to go back</div>
+      <div class="sym-panel" id="sym-panel"></div>
+    </div>
+    <div class="card" id="share-sections-card">
+      <div class="card-hd"><span class="card-title">Sections</span></div>
+      <div id="share-sections-list"></div>
+    </div>
+    <div class="card" id="share-libs-card" style="display:none">
+      <div class="card-hd"><span class="card-title">Detected libraries</span></div>
+      <div id="share-libs-body"></div>
+    </div>
+  </div>
+
+  <!-- Symbols -->
+  <div class="atab-panel" id="satab-symbols">
+    <div class="card">
+      <div class="card-hd"><span class="card-title">Symbols</span></div>
+      <div class="tbl-controls">
+        <input class="tbl-search" id="share-sym-q" placeholder="Search symbols..." oninput="shareSymFilter()">
+        <select class="tbl-sel" id="share-sym-sec" onchange="shareSymFilter()">
+          <option value="">All sections</option>
+        </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none">
+          <input type="checkbox" id="share-demangle-toggle" onchange="shareSymFilter()" style="accent-color:var(--accent)"> Demangle C++
+        </label>
+      </div>
+      <div class="tbl-wrap">
+        <div class="tbl-scroll">
+          <table class="sym-tbl">
+            <thead><tr>
+              <th>Symbol</th>
+              <th>Size</th>
+              <th>Section</th>
+              <th>Object file</th>
+            </tr></thead>
+            <tbody id="share-sym-tbody"></tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="share-sym-info"></span>
+          <button id="share-sym-prev" onclick="shareSymPg(-1)">&#x2039;</button>
+          <button id="share-sym-next" onclick="shareSymPg(1)">&#x203a;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Insights -->
+  <div class="atab-panel" id="satab-insights">
+    <div class="card" id="card-insights" style="display:none">
+      <div id="insights-body"></div>
+    </div>
+  </div>
+</div>
+
+<div class="addr-tooltip" id="addr-tooltip"></div>
+
+{# Server-injected analysis blob, consumed by share.js #}
+{{ analysis_data|json_script:"share-data" }}
+<script src="/static/scripts/utils.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/theme.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/treemap.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/address-map.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/insights.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/share.js?v={{ asset_version }}"></script>
+</body>
+</html>

@@ -323,6 +323,10 @@ def terms(request):
     return render(request, 'terms.html')
 
 
+def docs(request):
+    return render(request, 'docs.html')
+
+
 def login_view(request):
     """Render the login page. If already logged in, redirect to /app."""
     if request.user.is_authenticated:
@@ -606,8 +610,13 @@ def api_analyze(request):
         )
 
     mmap.source_file = request.FILES['file'].name or mmap.source_file
-    warnings = bloat_analyze(mmap)
-    result = _mmap_to_json(mmap, warnings)
+    try:
+        warnings = bloat_analyze(mmap)
+        result = _mmap_to_json(mmap, warnings)
+    except Exception as e:
+        import traceback, logging
+        logging.getLogger(__name__).error('Analysis failed: %s', traceback.format_exc())
+        return JsonResponse({'error': f'Analysis failed: {e}'}, status=500)
 
     # Only save to history for authenticated users
     if request.user.is_authenticated:

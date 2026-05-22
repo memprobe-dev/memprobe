@@ -40,7 +40,7 @@ async function runAnalyze() {
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok) { showErr('a', data.detail || res.statusText); return; }
+    if (!res.ok) { showErr('a', data.error || data.detail || res.statusText); return; }
     if (projName) {
       localStorage.setItem('memprobe-last-project', projName);
       _selectedProject = projName;

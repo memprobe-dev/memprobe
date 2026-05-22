@@ -1,0 +1,188 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Docs · memprobe</title>
+<meta name="description" content="Learn how to read ELF memory maps and understand firmware memory sections like .text, .rodata, .bss, and .data.">
+<link rel="icon" href="{% static 'logo.svg' %}" type="image/svg+xml">
+<link rel="stylesheet" href="{% static 'styles/base.css' %}">
+<script src="{% static 'scripts/theme-init.js' %}"></script>
+<style>
+  body { max-width: 760px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .subtitle { color: var(--text3); font-size: 14px; margin-bottom: 48px; }
+  h2 { font-size: 22px; font-weight: 700; margin: 56px 0 12px; color: var(--text); border-top: 1px solid var(--border); padding-top: 40px; }
+  h3 { font-size: 16px; font-weight: 700; margin: 28px 0 8px; color: var(--text); }
+  p, li { font-size: 14px; line-height: 1.8; color: var(--text2); }
+  ul, ol { padding-left: 20px; margin: 8px 0 16px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+          color: var(--text3); margin-bottom: 40px; }
+  .back:hover { color: var(--text); text-decoration: none; }
+  code { font-family: monospace; font-size: 13px; background: var(--bg3);
+         border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text); }
+  .section-table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 13px; }
+  .section-table th { text-align: left; padding: 8px 12px; color: var(--text3); font-weight: 600;
+                       text-transform: uppercase; letter-spacing: .06em; font-size: 11px;
+                       border-bottom: 1px solid var(--border); }
+  .section-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text2); vertical-align: top; }
+  .section-table td:first-child { font-family: monospace; font-size: 13px; color: var(--text); white-space: nowrap; }
+  .toc { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+         padding: 20px 24px; margin-bottom: 48px; }
+  .toc-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+               color: var(--text3); margin-bottom: 12px; }
+  .toc a { display: block; font-size: 14px; color: var(--text2); padding: 3px 0; }
+  .toc a:hover { color: var(--accent); text-decoration: none; }
+  .callout { background: var(--bg2); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+             padding: 12px 16px; margin: 20px 0; }
+  .callout p { margin: 0; }
+</style>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6390445284178085" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<a href="/" class="back">← Back to memprobe</a>
+
+<h1>Documentation</h1>
+<p class="subtitle">Guides for understanding firmware memory maps and ELF files.</p>
+
+<div class="toc">
+  <div class="toc-title">On this page</div>
+  <a href="#elf-memory-map">How to read your ELF memory map</a>
+  <a href="#section-types">Memory section types: .text, .rodata, .bss, .data, and more</a>
+</div>
+
+
+<!-- ───────────────────────────────────────────────── -->
+<h2 id="elf-memory-map">How to read your ELF memory map</h2>
+
+<p>When you compile firmware for an embedded target, the linker produces an ELF (Executable and Linkable Format) file. An ELF file is more than a flat binary — it contains rich metadata about every function, variable, and section in your program. memprobe reads that metadata and turns it into an interactive memory breakdown.</p>
+
+<h3>What is a memory map?</h3>
+<p>A memory map describes how your program's code and data are laid out in the target's address space. Each named region in the map corresponds to a physical memory area on the chip — most commonly Flash (for code and read-only data) and RAM (for runtime data and the stack).</p>
+<p>The linker script for your target defines these regions. For example, an STM32F4 might have:</p>
+<ul>
+  <li><strong>FLASH</strong> — 1 MB starting at address <code>0x08000000</code></li>
+  <li><strong>RAM</strong> — 192 KB starting at address <code>0x20000000</code></li>
+  <li><strong>CCMRAM</strong> — 64 KB of tightly-coupled RAM at <code>0x10000000</code></li>
+</ul>
+
+<h3>Flash usage vs. RAM usage</h3>
+<p>One of the most important distinctions in embedded firmware is the difference between Flash usage and RAM usage:</p>
+<ul>
+  <li><strong>Flash usage</strong> is how much non-volatile storage your firmware occupies. This determines whether your binary fits on the chip and how much space is left for future updates.</li>
+  <li><strong>RAM usage</strong> is how much working memory your program needs at runtime. This includes global and static variables, the heap, and the stack. If RAM overflows, your program crashes — often in subtle, hard-to-debug ways.</li>
+</ul>
+<p>These two numbers can be very different. A function full of constants may use a lot of Flash but almost no RAM. A large lookup table stored in Flash with a <code>const</code> qualifier costs Flash, not RAM.</p>
+
+<h3>Reading the memprobe output</h3>
+<p>When you analyze a file with memprobe, the top-level numbers — Flash and RAM — are derived from the sections in your ELF and the regions defined in your linker script. Below that:</p>
+<ul>
+  <li><strong>Sections</strong> — The raw ELF sections (<code>.text</code>, <code>.rodata</code>, <code>.bss</code>, etc.) sorted by size. These are the building blocks of your memory map.</li>
+  <li><strong>Symbols</strong> — Individual functions and variables within those sections. The symbol table lets you pinpoint exactly which function is consuming the most Flash or which global variable is eating your RAM.</li>
+  <li><strong>Treemap</strong> — A proportional visual of section sizes. Larger rectangles mean more memory.</li>
+  <li><strong>Regions</strong> — A fill-percentage bar for each memory region defined in your linker script, so you can see at a glance how close you are to the limit.</li>
+</ul>
+
+<div class="callout">
+  <p><strong>Tip:</strong> Sort the symbol table by size and look at the top 10 entries. In most firmware projects, a small number of symbols account for the majority of Flash or RAM usage. Fixing those first gives the biggest return.</p>
+</div>
+
+<h3>Linker map files (.map)</h3>
+<p>If you do not have the ELF file, memprobe also accepts <code>.map</code> files generated by the linker (GCC's <code>-Map</code> flag, or IAR's map output). Map files contain similar section and symbol information in a text format. They are less detailed than ELF files — binary info like architecture and entry point will be missing — but the memory breakdown is still accurate.</p>
+
+
+<!-- ───────────────────────────────────────────────── -->
+<h2 id="section-types">Memory section types: .text, .rodata, .bss, .data, and more</h2>
+
+<p>ELF sections are named regions within the binary, each with a specific purpose. Understanding what goes into each section tells you where your memory is being spent.</p>
+
+<h3>Flash sections (read from non-volatile storage)</h3>
+
+<table class="section-table">
+  <thead>
+    <tr><th>Section</th><th>Contains</th><th>Memory type</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>.text</td>
+      <td>Compiled machine code — every function in your program. This is almost always the largest section in a firmware binary.</td>
+      <td>Flash</td>
+    </tr>
+    <tr>
+      <td>.rodata</td>
+      <td>Read-only data: string literals, <code>const</code> arrays, lookup tables, and other compile-time constants. Because it never changes, the linker places it in Flash rather than RAM.</td>
+      <td>Flash</td>
+    </tr>
+    <tr>
+      <td>.data (LMA)</td>
+      <td>The initial values for initialized global and static variables. At startup, the C runtime copies this from Flash into RAM. The Flash copy is sometimes called the Load Memory Address (LMA) copy.</td>
+      <td>Flash (stored), RAM (at runtime)</td>
+    </tr>
+    <tr>
+      <td>.isr_vector / .vectors</td>
+      <td>The interrupt vector table — a fixed array of function pointers that the CPU jumps to when an interrupt fires. Located at the start of Flash on most Cortex-M devices.</td>
+      <td>Flash</td>
+    </tr>
+    <tr>
+      <td>.ARM.extab / .ARM.exidx</td>
+      <td>ARM exception-handling tables used for stack unwinding (C++ exceptions or debugger backtraces). Often present even in C-only projects when using GCC's ARM target.</td>
+      <td>Flash</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>RAM sections (used at runtime)</h3>
+
+<table class="section-table">
+  <thead>
+    <tr><th>Section</th><th>Contains</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>.data</td>
+      <td>Initialized global and static variables — those with a non-zero initial value. For example, <code>int x = 5;</code> at file scope.</td>
+      <td>Counts against both Flash (for the initial values) and RAM (for the runtime copy).</td>
+    </tr>
+    <tr>
+      <td>.bss</td>
+      <td>Uninitialized (or zero-initialized) global and static variables. For example, <code>int x;</code> or <code>static uint8_t buf[1024];</code>. The C runtime zeroes this region at startup — no Flash copy needed.</td>
+      <td>Only costs RAM, not Flash. Often the largest RAM section.</td>
+    </tr>
+    <tr>
+      <td>.heap</td>
+      <td>Dynamic memory managed by <code>malloc</code>/<code>free</code>. The linker reserves a fixed block; actual usage depends on runtime behavior.</td>
+      <td>Avoid on resource-constrained targets. Fragmentation is a common failure mode.</td>
+    </tr>
+    <tr>
+      <td>.stack</td>
+      <td>The call stack — local variables and return addresses for every active function call. The linker typically reserves a fixed size; overflow causes a hard fault.</td>
+      <td>Increase stack size if you see unexplained hard faults or corrupted variables.</td>
+    </tr>
+    <tr>
+      <td>.noinit</td>
+      <td>Variables that must survive a soft reset — not zeroed by the startup code. Useful for storing crash diagnostics or boot counters across resets.</td>
+      <td>Requires explicit linker script support.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Common patterns and what to look for</h3>
+
+<ul>
+  <li><strong>Large <code>.rodata</code>:</strong> Usually caused by string tables, font bitmaps, audio samples, or large <code>const</code> arrays. These are fine in Flash but check if any are accidentally in RAM.</li>
+  <li><strong>Large <code>.bss</code>:</strong> Often caused by large static buffers or global arrays. Consider whether they can be allocated on the stack (local variables) or replaced with smaller ring buffers.</li>
+  <li><strong>Significant <code>.data</code>:</strong> Every byte here costs Flash twice — once for the stored initial value and once for the RAM copy at runtime. Prefer zero-initialization (<code>.bss</code>) or <code>const</code> data (<code>.rodata</code>) where possible.</li>
+  <li><strong>Many small symbols in <code>.text</code>:</strong> May indicate excessive inlining or template instantiation. Check compiler flags — <code>-Os</code> optimizes for size, while <code>-O2</code>/<code>-O3</code> optimize for speed at the cost of code size.</li>
+</ul>
+
+<div class="callout">
+  <p><strong>Quick rule of thumb:</strong> Flash usage = <code>.text</code> + <code>.rodata</code> + <code>.data</code> (LMA). RAM usage = <code>.data</code> (VMA) + <code>.bss</code> + <code>.heap</code> + <code>.stack</code>.</p>
+</div>
+
+</body>
+</html>

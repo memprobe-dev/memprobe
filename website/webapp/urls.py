@@ -10,6 +10,7 @@ urlpatterns = [
     path('logout',                            views.logout_view,          name='logout'),
     path('privacy',                           views.privacy,              name='privacy'),
     path('terms',                             views.terms,                name='terms'),
+    path('docs',                              views.docs,                 name='docs'),
 
     # Account self-service
     path('account/delete',                    views.delete_account,       name='delete_account'),

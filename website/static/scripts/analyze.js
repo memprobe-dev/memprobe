@@ -1,5 +1,31 @@
 let _lastAnalysis = null;
 
+function _countUpBytes(el, target, duration = 900) {
+  if (!el) return;
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = fmtB(Math.round(target * eased));
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = fmtB(target);
+  }
+  requestAnimationFrame(step);
+}
+
+function _countUpInt(el, target, duration = 900) {
+  if (!el) return;
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = Math.round(target * eased).toLocaleString();
+    if (t < 1) requestAnimationFrame(step);
+    else el.textContent = target.toLocaleString();
+  }
+  requestAnimationFrame(step);
+}
+
 async function runAnalyze() {
   const f = document.getElementById('fi-a').files[0]; if (!f) return;
   const projName = _selectedProject === '__new__'
@@ -23,7 +49,7 @@ async function runAnalyze() {
       await loadProjectPicker();
     }
     renderResults(data, data.build_id || null);
-  } catch(e) { showErr('a', e.message); }
+  } catch(e) { console.error('Analyze failed:', e); showErr('a', e?.message || 'Unknown error'); }
   finally { setBusy('a', false); }
 }
 
@@ -31,18 +57,28 @@ function renderResults(d, histBuildId) {
   _lastAnalysis = d;
   document.getElementById('upload-ui').style.display = 'none';
   document.getElementById('results').classList.add('show');
+
+  // Clear budget fields, then reload from the current project (which may have saved budgets).
+  document.getElementById('budget-flash').value = '';
+  document.getElementById('budget-ram').value = '';
+  loadBudgetForProject(typeof _selectedProject !== 'undefined' ? _selectedProject : null);
   document.getElementById('res-filename').textContent = d.filename;
 
   if (histBuildId) pushBuildHash(histBuildId);
 
   const kpiEl = document.getElementById('kpi-row');
+  const otaSub = (() => { const ota = (d.binary_info||{}).ota_estimate; return ota && ota.compressed_bytes ? `~${fmtB(ota.compressed_bytes)} OTA` : ''; })();
   kpiEl.innerHTML = `
-    <div class="kpi"><div class="kpi-label">Flash</div><div class="kpi-val">${d.total_flash_human}</div><div class="kpi-sub">${(() => { const ota = (d.binary_info||{}).ota_estimate; return ota && ota.compressed_bytes ? `~${fmtB(ota.compressed_bytes)} OTA` : ''; })()}</div></div>
-    <div class="kpi"><div class="kpi-label">RAM</div><div class="kpi-val">${d.total_ram_human}</div><div class="kpi-sub"></div></div>
-    <div class="kpi"><div class="kpi-label">Sections</div><div class="kpi-val">${d.section_count}</div><div class="kpi-sub">${d.symbol_count.toLocaleString()} symbols</div></div>
-    ${d.warnings.length ? `<div class="kpi warn"><div class="kpi-label">Warnings</div><div class="kpi-val">${d.warnings.length}</div></div>` : ''}
+    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_flash}"><div class="kpi-label">Flash</div><div class="kpi-val" id="kv-flash">0 B</div><div class="kpi-sub">${otaSub}</div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-flash"></div></div></div>
+    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_ram}"><div class="kpi-label">RAM</div><div class="kpi-val" id="kv-ram">0 B</div><div class="kpi-sub"></div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-ram"></div></div></div>
+    <div class="kpi"><div class="kpi-label">Sections</div><div class="kpi-val" id="kv-sections">0</div><div class="kpi-sub">${d.symbol_count.toLocaleString()} symbols</div></div>
+    ${d.warnings.length ? `<div class="kpi warn"><div class="kpi-label">Warnings</div><div class="kpi-val" id="kv-warnings">0</div></div>` : ''}
   `;
   applyBudgetToKPIs(d.total_flash, d.total_ram);
+  _countUpBytes(document.getElementById('kv-flash'), d.total_flash);
+  _countUpBytes(document.getElementById('kv-ram'), d.total_ram);
+  _countUpInt(document.getElementById('kv-sections'), d.section_count);
+  if (d.warnings.length) _countUpInt(document.getElementById('kv-warnings'), d.warnings.length);
 
   const bi = d.binary_info || {};
   if (bi.arch) {
@@ -147,7 +183,7 @@ function renderResults(d, histBuildId) {
 
   renderTreemap(d.treemap);
 
-  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 
   // Guests get one analysis - permanently hide the upload area after first use
   if (typeof _IS_GUEST !== 'undefined' && _IS_GUEST) {

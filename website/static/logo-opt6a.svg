@@ -1,0 +1,21 @@
+<!-- 6A: Horizontal split - top bar + bottom two columns -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#1d1d28"/>
+      <stop offset="100%" stop-color="#13131a"/>
+    </linearGradient>
+    <linearGradient id="str" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"  stop-color="#5b9cf6"/>
+      <stop offset="100%" stop-color="#3dd68c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7"
+        fill="url(#bg)" stroke="url(#str)" stroke-width="1.5"/>
+  <!-- Top bar (blue) -->
+  <rect x="5.5" y="5.5" width="21"  height="9"   rx="1.4" fill="#5b9cf6" opacity="0.88"/>
+  <!-- Bottom-left (green) -->
+  <rect x="5.5" y="16"  width="13"  height="10.5" rx="1.4" fill="#3dd68c" opacity="0.88"/>
+  <!-- Bottom-right (amber) -->
+  <rect x="19.5" y="16" width="7"   height="10.5" rx="1.4" fill="#f0a040" opacity="0.88"/>
+</svg>

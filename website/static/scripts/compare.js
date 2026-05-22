@@ -61,7 +61,7 @@ function cmpAddFiles(fileList) {
 }
 
 function cmpFromHistory() {
-  fetch('/api/history').then(r => r.json()).then(builds => {
+  fetch('/api/history').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(builds => {
     const tbody = document.getElementById('cmp-hist-rows');
     tbody.innerHTML = '';
     builds.forEach(b => {

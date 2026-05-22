@@ -1,5 +1,6 @@
 async function loadHist() {
   const res = await fetch('/api/history');
+  if (!res.ok) return;
   const builds = await res.json();
   const el = document.getElementById('hist-list');
   if (!builds.length) { el.innerHTML = '<div class="hist-empty">No builds yet.</div>'; return; }

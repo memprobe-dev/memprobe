@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 import tempfile
+from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from memprobe.libraries import detect_libraries
 from memprobe import history as hist
 from memprobe import __version__
 
+hist.init_db()
+
 _SHARE_ID_BYTES = 5   # 10 hex chars
 _SUPPORTED = {'.map', '.elf', '.axf'}
 
@@ -49,13 +52,11 @@ def _compute_asset_version() -> str:
         return __version__
 
 
-def _asset_version() -> str:
-    """Live mtime hash; called once per HTML render."""
-    return _compute_asset_version()
-
-
-# Kept as a fallback for any callers still referencing the old constant.
 _ASSET_VERSION = _compute_asset_version()
+
+
+def _asset_version() -> str:
+    return _ASSET_VERSION
 
 
 def _json_safe_for_html(data) -> str:
@@ -224,23 +225,23 @@ def _mmap_from_history(build_id: int, user_id: str) -> MemoryMap:
     if not analysis:
         raise ValueError(f'Build {build_id} has no stored analysis data')
 
-    sections = []
-    for sd in analysis.get('sections', []):
-        syms = [
-            Symbol(
-                name=s['name'], size=s['size'], address=0,
-                section=s['section'], object_file=s.get('object_file', ''),
-                library=s.get('library') or None,
-                source_location=s.get('source_location') or None,
-            )
-            for s in analysis.get('symbols', [])
-            if s['section'] == sd['name']
-        ]
-        sections.append(Section(
+    syms_by_section = defaultdict(list)
+    for s in analysis.get('symbols', []):
+        syms_by_section[s['section']].append(Symbol(
+            name=s['name'], size=s['size'], address=0,
+            section=s['section'], object_file=s.get('object_file', ''),
+            library=s.get('library') or None,
+            source_location=s.get('source_location') or None,
+        ))
+
+    sections = [
+        Section(
             name=sd['name'], size=sd['size'], address=0,
             section_type=SectionType(sd['type']),
-            symbols=syms,
-        ))
+            symbols=syms_by_section.get(sd['name'], []),
+        )
+        for sd in analysis.get('sections', [])
+    ]
 
     regions = [
         MemoryRegion(name=r['name'], origin=0, length=r['length'], used=r['used'])
@@ -313,10 +314,10 @@ def logout_view(request):
 #
 # What gets deleted (every byte of user data we hold):
 #
-#   memprobe.db        DELETE FROM builds  WHERE user_id = ?
+#   memprobe (pg)      DELETE FROM builds  WHERE user_id = ?
 #                      DELETE FROM shares  WHERE user_id = ?
 #
-#   Django db.sqlite3  DELETE FROM auth_user                              (cascades to)
+#   Django (pg)        DELETE FROM auth_user                              (cascades to)
 #                       └─ auth_user_groups
 #                       └─ auth_user_user_permissions
 #                       └─ account_emailaddress        (cascades to account_emailconfirmation)
@@ -484,7 +485,7 @@ def delete_account(request):
     for sa in SocialAccount.objects.filter(user=user):
         _revoke_oauth_grant(sa)
 
-    # 2. Purge memprobe data (separate SQLite, no FK to Django models)
+    # 2. Purge memprobe data (no FK to Django models)
     try:
         hist.delete_all_for_user(user_id)
     except Exception:

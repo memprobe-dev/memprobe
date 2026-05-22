@@ -301,13 +301,6 @@
     .sw-warn svg { color: var(--amber); margin-top: 1px; flex-shrink: 0; }
     .sw-warn-text { color: var(--text2); line-height: 1.5; }
     .sw-warn-text strong { color: var(--amber); font-weight: 600; }
-    .sw-example-badge {
-      font-size: 9px; font-weight: 800; letter-spacing: .12em;
-      text-transform: uppercase; padding: 3px 8px; border-radius: 100px;
-      background: rgba(91,156,246,.15); color: var(--accent);
-      border: 1px solid rgba(91,156,246,.3);
-      margin-left: auto;
-    }
     .sw-kpi-bar-fill, .sw-sym-bar-fill { width: 0; transition: width 1.1s cubic-bezier(.22, 1, .36, 1); }
     .sw-sym-row { opacity: 0; transform: translateY(6px); transition: opacity .45s ease, transform .45s ease; }
     .is-playing .sw-sym-row { opacity: 1; transform: none; }
@@ -601,7 +594,7 @@
 
       <div class="privacy-claim">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        <span><strong>Your binaries stay in your session.</strong> Parsed in-memory, never stored.</span>
+        <span><strong>Your binaries stay in your session and are never stored.</strong></span>
       </div>
 
       <div class="demo-wrap">
@@ -610,8 +603,7 @@
             <div class="sw-dot" style="background:#f06060"></div>
             <div class="sw-dot" style="background:#f0a040"></div>
             <div class="sw-dot" style="background:#3dd68c"></div>
-            <span class="sw-filename">demo_firmware.elf</span>
-            <span class="sw-example-badge">Example</span>
+            <span class="sw-filename">firmware.elf</span>
           </div>
           <div class="sw-body">
             <div class="sw-kpi-row">
@@ -631,13 +623,11 @@
                 <div class="sw-kpi-label">Symbols</div>
                 <div class="sw-kpi-val" data-count-to="1842" data-comma="true">0</div>
                 <div class="sw-kpi-sub">across 38 source files</div>
-                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="60" style="background:var(--amber)"></div></div>
               </div>
               <div class="sw-kpi">
                 <div class="sw-kpi-label">Duplicate symbols</div>
                 <div class="sw-kpi-val" data-count-to="7">0</div>
                 <div class="sw-kpi-sub">~3.2 KB recoverable flash</div>
-                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="8" style="background:var(--red)"></div></div>
               </div>
             </div>
 
@@ -809,31 +799,6 @@
         </div>
         <h3>Speaks your toolchain</h3>
         <p>GCC, Clang, IAR EWARM. ELF and AXF on ARM, RISC-V, Xtensa, AVR.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- How it works -->
-  <section class="how-section" id="how">
-    <div class="section-head">
-      <h2>From binary to breakdown, in three steps.</h2>
-      <div class="section-sub">No CLI. No scripts. Browser only.</div>
-    </div>
-    <div class="how-grid">
-      <div class="how-step" data-reveal>
-        <div class="how-num">1</div>
-        <h3>Drop your file</h3>
-        <p>.elf, .axf, or linker .map. From GCC, Clang, or IAR. Any ARM, RISC-V, Xtensa, or AVR target.</p>
-      </div>
-      <div class="how-step" data-reveal>
-        <div class="how-num">2</div>
-        <h3>Parsed in your session</h3>
-        <p>Sections, symbols, DWARF debug info, library signatures. All in memory. Bytes never touch disk.</p>
-      </div>
-      <div class="how-step" data-reveal>
-        <div class="how-num">3</div>
-        <h3>Explore, diff, share</h3>
-        <p>Treemap, build diffs, trend charts. Save to a project or share a read-only link.</p>
       </div>
     </div>
   </section>

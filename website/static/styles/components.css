@@ -47,6 +47,19 @@
 .kpi.budget-ok { border-color:var(--green)!important; }
 .kpi.budget-ok .kpi-label { color:var(--green)!important; }
 
+.kpi-bar-track {
+  height: 3px; border-radius: 2px; background: var(--border2);
+  margin-top: 10px; overflow: hidden;
+}
+.kpi-bar-fill {
+  height: 100%; border-radius: 2px; width: 0; opacity: 0;
+  transition: width .7s cubic-bezier(.22,1,.36,1), opacity .3s;
+}
+.kpi-bar-flash { background: var(--accent); }
+.kpi-bar-ram   { background: var(--green); }
+.kpi.budget-exceeded .kpi-bar-flash,
+.kpi.budget-exceeded .kpi-bar-ram { background: var(--red); }
+
 .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 20px 22px; margin-bottom: 14px; transition: border-color .2s, box-shadow .2s; }
 .card:hover { border-color: var(--border2); box-shadow: var(--shadow); }
 .card-hd {

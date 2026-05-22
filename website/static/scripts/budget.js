@@ -16,21 +16,41 @@ function applyBudgetToKPIs(flashBytes, ramBytes) {
   if (!kpiEl) return;
   const kpis = kpiEl.querySelectorAll('.kpi');
   // kpis[0] = Flash, kpis[1] = RAM
-  if (fb !== null && kpis[0]) {
-    const exceeded = flashBytes > fb;
-    kpis[0].classList.toggle('budget-exceeded', exceeded);
-    kpis[0].classList.toggle('budget-ok', !exceeded);
-    kpis[0].querySelector('.kpi-sub') && (kpis[0].querySelector('.kpi-sub').innerHTML = exceeded
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:3px"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg> exceeds ${fmtB(fb)} budget by ${fmtB(flashBytes - fb)}`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg> ${fmtB(fb - flashBytes)} under budget`);
+
+  function setBar(kpiEl, usedBytes, budgetBytes, barSelector) {
+    const fill = kpiEl.querySelector(barSelector);
+    if (!fill) return;
+    if (budgetBytes !== null && budgetBytes > 0) {
+      const pct = Math.min(100, (usedBytes / budgetBytes) * 100);
+      fill.style.width = pct.toFixed(1) + '%';
+      fill.style.opacity = '1';
+    } else {
+      fill.style.width = '0%';
+      fill.style.opacity = '0';
+    }
   }
-  if (rb !== null && kpis[1]) {
-    const exceeded = ramBytes > rb;
-    kpis[1].classList.toggle('budget-exceeded', exceeded);
-    kpis[1].classList.toggle('budget-ok', !exceeded);
-    kpis[1].querySelector('.kpi-sub') && (kpis[1].querySelector('.kpi-sub').innerHTML = exceeded
-      ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:3px"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg> exceeds ${fmtB(rb)} budget by ${fmtB(ramBytes - rb)}`
-      : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg> ${fmtB(rb - ramBytes)} under budget`);
+
+  if (kpis[0]) {
+    if (fb !== null) {
+      const exceeded = flashBytes > fb;
+      kpis[0].classList.toggle('budget-exceeded', exceeded);
+      kpis[0].classList.toggle('budget-ok', !exceeded);
+      kpis[0].querySelector('.kpi-sub') && (kpis[0].querySelector('.kpi-sub').innerHTML = exceeded
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:3px"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg> exceeds ${fmtB(fb)} budget by ${fmtB(flashBytes - fb)}`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg> ${fmtB(fb - flashBytes)} under budget`);
+    }
+    setBar(kpis[0], flashBytes, fb, '.kpi-bar-flash');
+  }
+  if (kpis[1]) {
+    if (rb !== null) {
+      const exceeded = ramBytes > rb;
+      kpis[1].classList.toggle('budget-exceeded', exceeded);
+      kpis[1].classList.toggle('budget-ok', !exceeded);
+      kpis[1].querySelector('.kpi-sub') && (kpis[1].querySelector('.kpi-sub').innerHTML = exceeded
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;margin-right:3px"><path d="M12 2L1 21h22L12 2zm0 3.5L20.5 19h-17L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg> exceeds ${fmtB(rb)} budget by ${fmtB(ramBytes - rb)}`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:3px"><polyline points="20 6 9 17 4 12"/></svg> ${fmtB(rb - ramBytes)} under budget`);
+    }
+    setBar(kpis[1], ramBytes, rb, '.kpi-bar-ram');
   }
 }
 
@@ -44,7 +64,8 @@ function saveBudgetForProject(proj) {
 
 async function loadBudgetForProject(proj) {
   const key = _budgetKey(proj === '__new__' ? '__new__' : proj);
-  const saved = JSON.parse(localStorage.getItem(key) || 'null');
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(key) || 'null'); } catch (_) {}
   document.getElementById('budget-flash').value = saved?.flash || '';
   document.getElementById('budget-ram').value   = saved?.ram   || '';
 

@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>memprobe</title>
 <link rel="icon" href="/static/logo.svg" type="image/svg+xml">
-<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
 <link rel="stylesheet" href="/static/styles/base.css?v={{ asset_version }}">
 <link rel="stylesheet" href="/static/styles/layout.css?v={{ asset_version }}">
 <link rel="stylesheet" href="/static/styles/upload.css?v={{ asset_version }}">
@@ -143,11 +142,11 @@
       <div class="budget-row" id="budget-row-a">
         <div class="budget-field">
           <label class="budget-label">Flash budget <span style="font-weight:400">(KB)</span></label>
-          <input class="budget-input" id="budget-flash" type="number" min="0" placeholder="e.g. 512" oninput="saveBudget()">
+          <input class="budget-input" id="budget-flash" type="number" min="0" oninput="saveBudget()">
         </div>
         <div class="budget-field">
           <label class="budget-label">RAM budget <span style="font-weight:400">(KB)</span></label>
-          <input class="budget-input" id="budget-ram" type="number" min="0" placeholder="e.g. 256" oninput="saveBudget()">
+          <input class="budget-input" id="budget-ram" type="number" min="0" oninput="saveBudget()">
         </div>
       </div>
 
@@ -172,11 +171,6 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           <span>New file</span>
         </button>
-        {% else %}
-        <a href="/login" class="guest-cta-btn">
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          Sign in for full access
-        </a>
         {% endif %}
       </div>
     </div>
@@ -187,7 +181,7 @@
     <div class="guest-cta-banner">
       <div class="guest-cta-text">
         <div class="guest-cta-title">Unlock the full analysis</div>
-        <div class="guest-cta-sub">Treemap, symbols, insights, build history, comparisons, exports, and sharing. Free.</div>
+        <div class="guest-cta-sub">Treemap, symbols, insights, build history, comparisons, exports, and sharing.</div>
       </div>
       <a href="/login" class="guest-cta-btn guest-cta-btn-lg">
         Sign in or create account
@@ -616,6 +610,7 @@
 
 {# Server-injected authentication state, consumed by auth-flag.js #}
 {{ is_authenticated|json_script:"auth-state" }}
+<script src="/static/scripts/d3.min.js"></script>
 <script src="/static/scripts/auth-flag.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/utils.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/theme.js?v={{ asset_version }}"></script>

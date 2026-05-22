@@ -136,7 +136,7 @@ function updateAnalyzeBtn() {
     label.textContent = nm ? `Analyze + save to "${nm}"` : 'Enter project name above';
     btn.disabled = !f || !nm;
   } else if (_selectedProject === null) {
-    label.textContent = 'Analyze (snapshot)';
+    label.textContent = 'Analyze';
   } else if (typeof _selectedProject === 'string') {
     label.textContent = `Analyze + save to "${_selectedProject}"`;
   } else {

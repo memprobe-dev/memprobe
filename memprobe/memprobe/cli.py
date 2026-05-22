@@ -295,7 +295,7 @@ def history() -> None:
 @history.command("list")
 def history_list() -> None:
     """List past analyzed builds."""
-    builds = hist.list_builds()
+    builds = hist.list_builds(user_id='cli')
     if not builds:
         console.print("[dim]No builds in history.[/]")
         return
@@ -322,7 +322,7 @@ def history_list() -> None:
 @click.argument("build_id", type=int)
 def history_show(build_id: int) -> None:
     """Show a past build by ID."""
-    record = hist.get_build(build_id)
+    record = hist.get_build(build_id, user_id='cli')
     if record is None:
         err_console.print(f"[bold red]Error:[/] Build {build_id} not found.")
         sys.exit(1)
@@ -334,7 +334,7 @@ def history_show(build_id: int) -> None:
 @click.confirmation_option(prompt="Clear all build history?")
 def history_clear() -> None:
     """Clear all history."""
-    hist.clear()
+    hist.clear(user_id='cli')
     console.print("[green]History cleared.[/]")
 
 

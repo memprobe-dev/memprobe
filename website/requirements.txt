@@ -3,5 +3,9 @@ django-cors-headers>=4.3
 django-allauth[socialaccount]>=65.0
 python-dotenv>=1.0
 jinja2>=3.1
-certifi>=2024.0    # CA bundle for revoking OAuth grants over HTTPS
+certifi>=2024.0
+dj-database-url>=2.1
+psycopg2-binary>=2.9   # swap for psycopg2 (no binary) in production for better performance
+whitenoise>=6.6        # serves static files without a separate nginx/CDN
+gunicorn>=21.0         # production WSGI server
 # memprobe library — install from sibling directory: pip install -e ../memprobe

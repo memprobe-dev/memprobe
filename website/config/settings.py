@@ -14,6 +14,8 @@ import os
 import sys
 from pathlib import Path
 
+import dj_database_url
+
 from dotenv import load_dotenv
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -28,8 +30,6 @@ MEMPROBE_LIB = BASE_DIR.parent / 'memprobe'
 if str(MEMPROBE_LIB) not in sys.path:
     sys.path.insert(0, str(MEMPROBE_LIB))
 
-# Ensure data directory exists for Django DB and memprobe history DB
-(BASE_DIR / 'data').mkdir(exist_ok=True)
 
 # ── Security fundamentals ─────────────────────────────────────────────────────
 
@@ -78,6 +78,7 @@ SITE_ID = 1
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -88,17 +89,16 @@ MIDDLEWARE = [
 ]
 
 # ── Database ──────────────────────────────────────────────────────────────────
-# Django's own DB stores users, sessions, allauth data.
-# The memprobe build history lives in a separate SQLite (managed by history.py).
+# Requires DATABASE_URL=postgres://user:pass@host:5432/dbname
 
+_db_url = os.environ.get('DATABASE_URL', '')
+if not _db_url:
+    raise RuntimeError(
+        'DATABASE_URL environment variable is not set. '
+        'Set it to a PostgreSQL connection string (see .env).'
+    )
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'data' / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 20,
-        },
-    }
+    'default': dj_database_url.parse(_db_url, conn_max_age=600, conn_health_checks=True)
 }
 
 # ── Authentication ────────────────────────────────────────────────────────────
@@ -247,7 +247,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # ── Static files ──────────────────────────────────────────────────────────────
 
 STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ── File uploads ──────────────────────────────────────────────────────────────
 

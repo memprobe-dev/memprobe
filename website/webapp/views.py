@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import secrets
 import tempfile
+import threading
+import time
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
@@ -33,6 +35,38 @@ hist.init_db()
 
 _SHARE_ID_BYTES = 5   # 10 hex chars
 _SUPPORTED = {'.map', '.elf', '.axf'}
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+# Sliding-window rate limiter keyed by user ID (authenticated) or IP (guest).
+# Stored in-process; resets on server restart. Fine for single-process Gunicorn.
+
+_rate_lock = threading.Lock()
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+def _rate_limit(max_calls: int, window_seconds: int):
+    """Decorator: allow max_calls per window_seconds per user/IP. Returns 429 if exceeded."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            key = str(request.user.pk) if request.user.is_authenticated else (
+                request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+                or request.META.get('REMOTE_ADDR', 'unknown')
+            )
+            now = time.monotonic()
+            with _rate_lock:
+                calls = _rate_buckets[key]
+                # Evict timestamps outside the window
+                _rate_buckets[key] = [t for t in calls if now - t < window_seconds]
+                if len(_rate_buckets[key]) >= max_calls:
+                    return JsonResponse(
+                        {'error': 'Too many requests. Please wait and try again.'},
+                        status=429,
+                    )
+                _rate_buckets[key].append(now)
+            return view_func(request, *args, **kwargs)
+        return wrapper
+    return decorator
 
 # Static file cache-buster: max mtime across all JS/CSS under static/.
 # Recomputed on every HTML response (cheap: ~20 stat calls) so CSS/JS edits
@@ -279,6 +313,14 @@ def landing(request):
     resp['Pragma'] = 'no-cache'
     resp['Expires'] = '0'
     return resp
+
+
+def privacy(request):
+    return render(request, 'privacy.html')
+
+
+def terms(request):
+    return render(request, 'terms.html')
 
 
 def login_view(request):
@@ -539,7 +581,17 @@ def index(request):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+@_rate_limit(max_calls=20, window_seconds=60)
 def api_analyze(request):
+    # Guests are allowed exactly one analysis per session
+    if not request.user.is_authenticated:
+        if request.session.get('guest_analyzed'):
+            return JsonResponse(
+                {'error': 'Sign in to analyze more files and save your history.'},
+                status=403,
+            )
+        request.session['guest_analyzed'] = True
+
     if 'file' not in request.FILES:
         return HttpResponseBadRequest(
             json.dumps({'error': 'No file uploaded'}),
@@ -921,6 +973,7 @@ def api_compare(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 @api_login_required
+@_rate_limit(max_calls=30, window_seconds=60)
 def api_share(request):
     """Save an analysis result and return a short share ID."""
     try:

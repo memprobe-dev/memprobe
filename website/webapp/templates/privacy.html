@@ -1,0 +1,153 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy · memprobe</title>
+<link rel="icon" href="{% static 'logo.svg' %}" type="image/svg+xml">
+<link rel="stylesheet" href="{% static 'styles/base.css' %}">
+<script src="{% static 'scripts/theme-init.js' %}"></script>
+<style>
+  body { max-width: 740px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .updated { color: var(--text3); font-size: 13px; margin-bottom: 48px; }
+  h2 { font-size: 17px; font-weight: 700; margin: 36px 0 10px; color: var(--text); }
+  p, li { font-size: 14px; line-height: 1.75; color: var(--text2); }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+          color: var(--text3); margin-bottom: 40px; }
+  .back:hover { color: var(--text); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a href="/" class="back">← Back to memprobe</a>
+
+<h1>Privacy Policy</h1>
+<p class="updated">Last updated: May 22, 2025</p>
+
+<p>At memprobe, accessible at memprobe.dev, one of our main priorities is the privacy of our visitors and users. This Privacy Policy document contains types of information that is collected and recorded by memprobe and how we use it. memprobe is operated by an individual, not a company or legal entity.</p>
+
+<p>If you have additional questions or require more information about our Privacy Policy, do not hesitate to contact us at <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a>.</p>
+
+<p>This Privacy Policy applies only to our online activities and is valid for visitors to our website with regards to the information that they share and/or that is collected by memprobe. This policy is not applicable to any information collected offline or via channels other than this website.</p>
+
+<h2>Consent</h2>
+<p>By using our website, you hereby consent to our Privacy Policy and agree to its terms.</p>
+
+<h2>Information We Collect</h2>
+<p>Personal Data is collected from you directly, automatically from your device, and from third-party authentication providers (Google and GitHub). The personal information that you are asked to provide, and the reasons why you are asked to provide it, will be made clear to you at the point we ask you to provide your personal information.</p>
+
+<p>When you sign in with Google or GitHub, we receive and store:</p>
+<ul>
+  <li><strong>Email address</strong>: used solely to identify your account</li>
+  <li><strong>Display name</strong>: shown in the user interface</li>
+  <li><strong>OAuth access token</strong>: retained only so we can revoke it when you delete your account; never used to access your files, repositories, or any third-party data</li>
+</ul>
+
+<p>We deliberately do not store your profile photo or any other data beyond what is listed above, even when the OAuth provider offers it.</p>
+
+<p>When you analyze a file, we store:</p>
+<ul>
+  <li>The <strong>analysis results</strong> (section sizes, symbol names, memory statistics): not the ELF or map file itself; uploaded files are discarded immediately after analysis and are never written to disk</li>
+  <li>The <strong>filename</strong> you uploaded</li>
+  <li>The <strong>project name</strong> you assign to a build, if any</li>
+  <li>A <strong>timestamp</strong> and, if detectable from the file's directory, the git commit hash and branch name</li>
+</ul>
+
+<h2>Files You Upload</h2>
+<p>memprobe processes ELF binaries and linker map files that you upload for memory analysis. You are solely responsible for ensuring you have the legal right to upload and analyze any file you submit to the service. You must not upload files that you do not own or have explicit permission to analyse, including proprietary firmware owned by a third party. Uploaded files are processed in memory and immediately discarded: they are never stored, logged, or shared. We do not inspect the contents of your files beyond what is required to perform the analysis you requested.</p>
+
+<h2>Information We Do Not Collect</h2>
+<ul>
+  <li>We do not store the ELF or map files you upload: they are analyzed in memory and discarded immediately</li>
+  <li>We do not use advertising networks or sell your data to any third parties</li>
+  <li>We do not track you across other websites</li>
+  <li>We do not store passwords: authentication is handled entirely by Google or GitHub</li>
+  <li>We do not collect payment information (no paid plans currently exist)</li>
+</ul>
+
+<h2>Log Files</h2>
+<p>memprobe follows a standard procedure of using log files. These files log visitors when they use the website. The information collected by log files includes internet protocol (IP) addresses, browser type, Internet Service Provider (ISP), date and time stamp, referring/exit pages, and possibly the number of clicks. These are not linked to any information that is personally identifiable. The purpose of the information is for administering the site, analyzing trends, tracking users' movement on the website, and gathering demographic information.</p>
+
+<h2>Cookies and Web Beacons</h2>
+<p>Like any other website, memprobe uses cookies. We set one session cookie when you sign in. This cookie is:</p>
+<ul>
+  <li>HttpOnly: inaccessible to JavaScript, preventing XSS-based session theft</li>
+  <li>Secure: transmitted over HTTPS only in production</li>
+  <li>SameSite=Lax: not sent on cross-site requests, mitigating CSRF</li>
+  <li>Valid for 30 days, or until you sign out</li>
+</ul>
+<p>We also store your UI preferences (theme, last selected project) in your browser's <code>localStorage</code>. This data is stored locally on your device and is never transmitted to our servers.</p>
+<p>For more general information on cookies, please read the <a href="https://www.privacypolicygenerator.info/cookie-policy-generator/" target="_blank" rel="noopener">Cookies article on Privacy Policy Generator website</a>.</p>
+
+<h2>How We Use Your Information</h2>
+<p>We use the information we collect in the following ways:</p>
+<ul>
+  <li>Provide, operate, and maintain our website and service</li>
+  <li>Identify and authenticate your account across sessions</li>
+  <li>Associate your build history and project settings with your account</li>
+  <li>Display trend charts and project comparisons within the service</li>
+  <li>Understand and analyze how you use our website to improve it</li>
+  <li>Prevent fraud, abuse, and violations of our Terms of Service</li>
+  <li>Revoke your OAuth access grant when you delete your account</li>
+</ul>
+<p>We do not use your data for marketing, advertising, or any purpose beyond operating the service.</p>
+
+<h2>Third-Party Privacy Policies</h2>
+<p>memprobe's Privacy Policy does not apply to other websites or services. We advise you to consult the respective Privacy Policies of any third-party services for more detailed information.</p>
+
+<p>The only third parties involved in providing the service are:</p>
+<ul>
+  <li><strong>Google</strong>: OAuth authentication. Your sign-in is governed by <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a></li>
+  <li><strong>GitHub</strong>: OAuth authentication. Your sign-in is governed by <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's Privacy Statement</a></li>
+  <li><strong>Our hosting provider</strong>: infrastructure only; they have no access to your application data beyond what is necessary to operate servers</li>
+</ul>
+
+<h2>Shared Builds</h2>
+<p>If you use the Share feature, a read-only snapshot of that build's analysis is stored and made accessible to anyone with the link. Shared builds contain only the analysis data (section sizes, symbols, binary metadata): they do not contain your name, email address, or any other personal identifier. You can revoke a shared link at any time by deleting the build from your history, which immediately removes the public link.</p>
+
+<h2>Data Retention</h2>
+<p>Your data is retained for as long as your account remains active. If you delete your account, all data associated with it: build history, project settings, shared builds, and OAuth credentials: is permanently and irreversibly deleted within seconds. Note that automated database backups are retained for up to 30 days. Deleted user data may persist in those backups during that window but will not be accessed or restored, and will be permanently purged when the backups rotate out.</p>
+
+<h2>CCPA Privacy Rights (California Consumers)</h2>
+<p>Under the CCPA, among other rights, California consumers have the right to:</p>
+<ul>
+  <li>Request that a business that collects a consumer's personal data disclose the categories and specific pieces of personal data that a business has collected about consumers</li>
+  <li>Request that a business delete any personal data about the consumer that a business has collected</li>
+  <li>Request that a business that sells a consumer's personal data, not sell the consumer's personal data</li>
+</ul>
+<p>If you make a request, we have one month to respond to you. We do not sell personal data. To exercise any of these rights, please contact us at <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a> or use the in-app account deletion feature under Settings → Delete Account.</p>
+
+<h2>GDPR Data Protection Rights (EEA / UK)</h2>
+<p>We would like to make sure you are fully aware of all of your data protection rights. Every user is entitled to the following:</p>
+<ul>
+  <li><strong>The right to access</strong>: You have the right to request copies of your personal data.</li>
+  <li><strong>The right to rectification</strong>: You have the right to request that we correct any information you believe is inaccurate or complete information you believe is incomplete.</li>
+  <li><strong>The right to erasure</strong>: You have the right to request that we erase your personal data, under certain conditions. This is available self-serve via Settings → Delete Account.</li>
+  <li><strong>The right to restrict processing</strong>: You have the right to request that we restrict the processing of your personal data, under certain conditions.</li>
+  <li><strong>The right to object to processing</strong>: You have the right to object to our processing of your personal data, under certain conditions.</li>
+  <li><strong>The right to data portability</strong>: You have the right to request that we transfer the data that we have collected to another organization, or directly to you, under certain conditions.</li>
+</ul>
+<p>If you make a request, we have one month to respond to you. If you would like to exercise any of these rights, please contact us at <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a>.</p>
+
+<h2>Children's Information</h2>
+<p>Another part of our priority is adding protection for children while using the internet. We encourage parents and guardians to observe, participate in, and/or monitor and guide their online activity.</p>
+<p>memprobe does not knowingly collect any Personal Identifiable Information from children under the age of 13. If you think that your child provided this kind of information on our website, we strongly encourage you to contact us immediately at <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a> and we will do our best efforts to promptly remove such information from our records.</p>
+
+<h2>Security</h2>
+<p>All data is transmitted over HTTPS. Sessions are protected with HttpOnly, Secure, and SameSite cookies. Database access is restricted to the application server with limited credentials. We apply security updates promptly. While we strive to use commercially acceptable means to protect your personal information, no method of transmission over the Internet or method of electronic storage is 100% secure. We cannot guarantee absolute security, but we will notify affected users promptly in the event of a data breach that affects their personal data.</p>
+
+<h2>Changes to This Privacy Policy</h2>
+<p>We may update our Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date. You are advised to review this Privacy Policy periodically for any changes. Changes to this Privacy Policy are effective when they are posted on this page. Continued use of memprobe after changes are posted constitutes your acceptance of the revised policy.</p>
+
+<h2>Contact Us</h2>
+<p>If you have any questions about this Privacy Policy, please contact us:</p>
+<p><strong>Email:</strong> <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a></p>
+
+</body>
+</html>

@@ -120,19 +120,17 @@
   </div>
 
   <p class="danger-sub">
-    This action is <strong>permanent and cannot be undone</strong>. Once submitted, your account and all associated data are removed immediately.
+    <strong>Permanent and cannot be undone.</strong> Everything below is deleted immediately.
   </p>
 
   <div class="danger-list">
     <div class="danger-list-title">What gets deleted</div>
     <ul>
-      <li>Your account <strong>{{ user.email }}</strong></li>
-      <li>All data associated with your account</li>
-      <li>All build history you've uploaded</li>
-      <li>All projects you've created</li>
-      <li>All share links you've generated</li>
-      <li>Your OAuth identity link to Google / GitHub on memprobe</li>
-      <li>The OAuth authorization at Google / GitHub itself, so future sign-ins require fresh consent</li>
+      <li>Your account (<strong>{{ user.email }}</strong>)</li>
+      <li>All build history and analysis results</li>
+      <li>All projects and project settings</li>
+      <li>All shared build links</li>
+      <li>Your Google / GitHub sign-in connection and authorization</li>
     </ul>
   </div>
 
@@ -141,7 +139,7 @@
 
     <div class="confirm-field">
       <label class="confirm-label" for="confirm-input">
-        Type <code>DELETE</code> to confirm:
+        Type <code>delete {{ user.email }}</code> to confirm:
       </label>
       <input
         class="confirm-input"
@@ -150,6 +148,7 @@
         autocomplete="off"
         autocapitalize="off"
         spellcheck="false"
+        data-email="{{ user.email }}"
         oninput="deleteAccountInput(this)"
       >
     </div>

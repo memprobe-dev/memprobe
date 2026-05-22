@@ -1,0 +1,111 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terms of Service · memprobe</title>
+<link rel="icon" href="{% static 'logo.svg' %}" type="image/svg+xml">
+<link rel="stylesheet" href="{% static 'styles/base.css' %}">
+<script src="{% static 'scripts/theme-init.js' %}"></script>
+<style>
+  body { max-width: 740px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .updated { color: var(--text3); font-size: 13px; margin-bottom: 48px; }
+  h2 { font-size: 17px; font-weight: 700; margin: 36px 0 10px; color: var(--text); }
+  p, li { font-size: 14px; line-height: 1.75; color: var(--text2); }
+  ul { padding-left: 20px; margin: 8px 0; }
+  li { margin-bottom: 4px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+          color: var(--text3); margin-bottom: 40px; }
+  .back:hover { color: var(--text); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<a href="/" class="back">← Back to memprobe</a>
+
+<h1>Terms of Service</h1>
+<p class="updated">Last updated: May 22, 2025</p>
+
+<p>Please read these Terms of Service ("Terms", "Terms of Service") carefully before using the memprobe website and service (the "Service") operated by an individual doing business as memprobe ("I", "me", or "my"). References to "we", "us", or "our" throughout these Terms refer to that individual.</p>
+
+<p>Your access to and use of the Service is conditioned on your acceptance of and compliance with these Terms. These Terms apply to all visitors, users and others who access or use the Service.</p>
+
+<p><strong>By accessing or using the Service you agree to be bound by these Terms. If you disagree with any part of the terms then you may not access the Service.</strong></p>
+
+<h2>1. Description of Service</h2>
+<p>memprobe is a firmware memory analysis tool that allows users to upload ELF binaries and linker map files to receive a breakdown of memory usage, including section sizes, symbol tables, and binary metadata. The Service is intended for use by embedded software engineers, firmware developers, and related technical professionals for the purpose of analyzing binaries they own or have lawful permission to analyze.</p>
+
+<h2>2. Accounts</h2>
+<p>When you create an account with us, you must provide information that is accurate, complete, and current at all times. Failure to do so constitutes a breach of the Terms, which may result in immediate termination of your account on our Service.</p>
+<p>You are responsible for safeguarding the account that you use to access the Service and for any activities or actions taken under your account. You agree not to disclose your account credentials to any third party. You must notify us immediately upon becoming aware of any breach of security or unauthorized use of your account.</p>
+<p>You must be at least 13 years of age to use the Service. By using the Service, you represent and warrant that you meet this requirement.</p>
+
+<h2>3. Acceptable Use</h2>
+<p>You agree to use the Service only for lawful purposes and in a manner that does not infringe the rights of others or restrict or inhibit anyone else's use of the Service. You agree not to use the Service to:</p>
+<ul>
+  <li><strong>Upload files you do not own or have explicit authorization to analyze.</strong> This includes firmware images, ELF binaries, or map files belonging to a third party: such as manufacturer firmware, competitor products, or any proprietary binary you have not been granted explicit permission to reverse-engineer or analyze.</li>
+  <li><strong>Upload malware, exploits, or malicious code</strong> of any kind, including but not limited to viruses, trojans, ransomware, spyware, adware, or any software designed to damage, disrupt, or gain unauthorized access to any system.</li>
+  <li><strong>Upload binaries for the purpose of circumventing copy protection, DRM, or license enforcement</strong> mechanisms contained within or associated with those binaries.</li>
+  <li>Attempt to gain unauthorized access to any portion of the Service, its servers, or any systems connected to the Service.</li>
+  <li>Probe, scan, or test the vulnerability of the Service or any related system or network.</li>
+  <li>Circumvent, disable, or otherwise interfere with security-related features of the Service, including rate limiting and access controls.</li>
+  <li>Use any automated means (bots, scrapers, or scripts) to access the Service in a manner that exceeds normal human usage, without our prior written consent.</li>
+  <li>Resell, sublicense, or provide access to the Service to third parties without our prior written consent.</li>
+  <li>Use the Service in any way that violates any applicable local, national, or international law or regulation.</li>
+  <li>Impersonate any person or entity, or falsely state or otherwise misrepresent your affiliation with any person or entity.</li>
+</ul>
+
+<h2>4. Uploaded Files and Content</h2>
+<p>You retain full ownership of any files you upload and the analysis results generated from them. By uploading a file, you grant us a limited, non-exclusive, non-transferable licence to process the file solely for the purpose of providing the analysis result to you. This licence terminates immediately upon completion of the analysis. Uploaded files are never stored, logged, shared, or used for any purpose other than producing the analysis you requested.</p>
+
+<p><strong>You represent and warrant that:</strong></p>
+<ul>
+  <li>You are the owner of all files you upload, or have obtained all necessary rights and permissions to upload and analyze them</li>
+  <li>The files you upload do not contain malware, malicious code, or any content designed to harm, exploit, or compromise computer systems</li>
+  <li>Uploading and analyzing the files does not violate any applicable law, regulation, license agreement, intellectual property right, or contractual obligation</li>
+  <li>You will not use memprobe to facilitate the reverse engineering of software or firmware in violation of applicable law or the relevant end-user license agreement</li>
+</ul>
+
+<p>We reserve the right to terminate your account immediately and without notice if we have reason to believe you have uploaded files in violation of these Terms.</p>
+
+<h2>5. Intellectual Property</h2>
+<p>The Service and its original content (excluding content provided by users), features, and functionality are and will remain the exclusive property of the individual operating memprobe. Our trademarks and trade dress may not be used in connection with any product or service without prior written consent.</p>
+
+<h2>6. Shared Builds</h2>
+<p>When you use the Share feature, you create a publicly accessible link to a snapshot of that build's analysis results. You are solely responsible for ensuring you have the right to share that data publicly. You can revoke a shared link at any time by deleting the build. We are not responsible for any consequences arising from your decision to share analysis data.</p>
+
+<h2>7. Termination</h2>
+<p>We may terminate or suspend your account immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms. This includes, but is not limited to, uploading stolen binaries, uploading malware, or attempting to abuse the Service.</p>
+<p>Upon termination, your right to use the Service will immediately cease. All data associated with your account will be permanently deleted. If you wish to terminate your own account, you may do so at any time via Settings → Delete Account.</p>
+
+<h2>8. Disclaimer of Warranties</h2>
+<p>The Service is provided on an "AS IS" and "AS AVAILABLE" basis without any warranties of any kind, either express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, non-infringement, or course of performance.</p>
+<p>memprobe does not warrant that (a) the Service will function uninterrupted, secure, or available at any particular time or location; (b) any errors or defects will be corrected; (c) the Service is free of viruses or other harmful components; or (d) the results of using the Service will meet your requirements or will be accurate or complete.</p>
+
+<h2>9. Limitation of Liability</h2>
+<p>To the maximum extent permitted by applicable law, in no event shall the individual operating memprobe be liable for any indirect, incidental, special, consequential, or punitive damages, including without limitation, loss of profits, data, use, goodwill, or other intangible losses, resulting from (i) your access to or use of or inability to access or use the Service; (ii) any conduct or content of any third party on the Service; (iii) any content obtained from the Service; or (iv) unauthorized access, use, or alteration of your transmissions or content, whether based on warranty, contract, tort (including negligence), or any other legal theory, whether or not we have been advised of the possibility of such damage.</p>
+<p>Our total liability to you for any claims arising under or related to these Terms shall not exceed the amount you paid us in the twelve (12) months preceding the claim, or ten US dollars (USD $10.00), whichever is greater.</p>
+
+<h2>10. Indemnification</h2>
+<p>You agree to defend, indemnify, and hold harmless the individual operating memprobe from and against any claims, liabilities, damages, judgments, awards, losses, costs, expenses, or fees (including reasonable attorneys' fees) arising out of or relating to your violation of these Terms or your use of the Service, including but not limited to: any files you upload, your use of the Service's content and features, or your violation of any rights of a third party.</p>
+
+<h2>11. Governing Law</h2>
+<p>These Terms shall be governed and construed in accordance with the laws of the United States, without regard to its conflict of law provisions. Our failure to enforce any right or provision of these Terms will not be considered a waiver of those rights. If any provision of these Terms is held to be invalid or unenforceable by a court, the remaining provisions of these Terms will remain in effect.</p>
+
+<h2>12. Links to Other Websites</h2>
+<p>Our Service may contain links to third-party websites or services that are not owned or controlled by memprobe. We have no control over and assume no responsibility for the content, privacy policies, or practices of any third-party websites or services. You further acknowledge and agree that memprobe shall not be responsible or liable, directly or indirectly, for any damage or loss caused or alleged to be caused by or in connection with use of or reliance on any such content, goods, or services available on or through any such websites or services.</p>
+
+<h2>13. Changes to Terms</h2>
+<p>We reserve the right, at our sole discretion, to modify or replace these Terms at any time. If a revision is material, we will try to provide at least 30 days notice prior to any new terms taking effect. What constitutes a material change will be determined at our sole discretion.</p>
+<p>By continuing to access or use our Service after those revisions become effective, you agree to be bound by the revised terms. If you do not agree to the new terms, please stop using the Service.</p>
+
+<h2>14. Contact Us</h2>
+<p>If you have any questions about these Terms, please contact us:</p>
+<p><strong>Email:</strong> <a href="mailto:memprobe@gmail.com">memprobe@gmail.com</a></p>
+
+</body>
+</html>

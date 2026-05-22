@@ -100,6 +100,13 @@ nav { display: flex; gap: 2px; }
   background: rgba(240,96,96,.10);
   color: var(--red);
 }
+.user-dropdown-divider {
+  height: 1px; background: var(--border); margin: 4px 8px;
+}
+.user-dropdown-item.legal-item {
+  color: var(--text3); font-size: 12px; text-decoration: none;
+}
+.user-dropdown-item.legal-item:hover { color: var(--text); background: var(--bg3); }
 
 @media (max-width: 768px) {
   header { padding: 0 14px; }

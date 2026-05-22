@@ -1,0 +1,30 @@
+# Environment and secrets
+.env
+.env.*
+
+# Database backups
+backups/
+
+# Django
+__pycache__/
+*.py[cod]
+*.pyo
+db.sqlite3
+data/
+staticfiles/
+media/
+
+# Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/

@@ -3,5 +3,6 @@
 
 function deleteAccountInput(input) {
   const btn = document.getElementById('btn-delete');
-  if (btn) btn.disabled = input.value !== 'DELETE';
+  const expected = 'delete ' + (input.dataset.email || '');
+  if (btn) btn.disabled = input.value !== expected;
 }

@@ -8,6 +8,8 @@ urlpatterns = [
     path('',                                  views.landing,              name='landing'),
     path('login',                             views.login_view,           name='login'),
     path('logout',                            views.logout_view,          name='logout'),
+    path('privacy',                           views.privacy,              name='privacy'),
+    path('terms',                             views.terms,                name='terms'),
 
     # Account self-service
     path('account/delete',                    views.delete_account,       name='delete_account'),

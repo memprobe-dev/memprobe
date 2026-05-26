@@ -11,6 +11,7 @@ from collections import defaultdict
 from functools import wraps
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import logout as auth_logout
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.middleware.csrf import get_token as csrf_get_token
@@ -90,6 +91,9 @@ _ASSET_VERSION = _compute_asset_version()
 
 
 def _asset_version() -> str:
+    # In DEBUG, recompute every request so JS/CSS changes are picked up without a restart.
+    if settings.DEBUG:
+        return _compute_asset_version()
     return _ASSET_VERSION
 
 

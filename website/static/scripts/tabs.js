@@ -5,6 +5,7 @@ function showTab(name, btn) {
   btn.classList.add('active');
   if (name === 'history') loadHist();
   if (name === 'projects') loadProjects();
+  if (name === 'analyze') loadProjectPicker();
 }
 
 function showAnalysisTab(name, btn) {

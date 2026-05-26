@@ -56,15 +56,18 @@ function renderProjectPicker() {
     </div>`;
   }).join('');
 
-  const newSel = _selectedProject === '__new__';
-  html += `<div class="proj-card new-card${newSel ? ' selected' : ''}" id="proj-new-card" onclick="selectNewProject()">
-    <div class="proj-card-check"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    <input class="proj-new-input" id="proj-new-name" placeholder="New project name"
-      onclick="event.stopPropagation()"
-      oninput="onNewProjectName(this.value)"
-      onkeydown="if(event.key==='Enter')document.getElementById('btn-a').click()">
-  </div>`;
+  const atLimit = _projectSummaries.length >= _MAX_PROJECTS;
+  if (!atLimit) {
+    const newSel = _selectedProject === '__new__';
+    html += `<div class="proj-card new-card${newSel ? ' selected' : ''}" id="proj-new-card" onclick="selectNewProject()">
+      <div class="proj-card-check"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <input class="proj-new-input" id="proj-new-name" placeholder="New project name"
+        onclick="event.stopPropagation()"
+        oninput="onNewProjectName(this.value)"
+        onkeydown="if(event.key==='Enter')document.getElementById('btn-a').click()">
+    </div>`;
+  }
 
   grid.innerHTML = html;
 

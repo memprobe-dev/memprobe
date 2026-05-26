@@ -104,7 +104,6 @@
     text-align: center; margin-top: 20px; line-height: 1.6;
   }
 </style>
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6390445284178085" crossorigin="anonymous"></script>
 </head>
 <body>
 
@@ -153,6 +152,10 @@
         oninput="deleteAccountInput(this)"
       >
     </div>
+
+    {% if error %}
+    <div style="color:var(--red);font-size:13px;margin-bottom:12px;">{{ error }}</div>
+    {% endif %}
 
     <div class="row">
       <a href="/app" class="btn-cancel">Cancel</a>

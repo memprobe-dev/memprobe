@@ -517,8 +517,13 @@ def delete_account(request):
         })
 
     # POST: actually delete. Require explicit confirmation to avoid accidents.
-    if request.POST.get('confirm') != 'DELETE':
-        return HttpResponseBadRequest('Confirmation phrase did not match.')
+    expected = f"delete {request.user.email}"
+    if request.POST.get('confirm', '').strip() != expected:
+        return render(request, 'delete_account.html', {
+            'user': request.user,
+            'csrf_token': csrf_get_token(request),
+            'error': 'Confirmation phrase did not match. Please try again.',
+        })
 
     user = request.user
     user_id = _uid(request)

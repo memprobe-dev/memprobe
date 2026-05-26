@@ -809,10 +809,10 @@ def _project_name_from_path(name: str) -> str:
 
 
 @csrf_exempt
-@require_http_methods(['GET', 'PATCH', 'DELETE'])
+@require_http_methods(['GET', 'POST', 'PATCH', 'DELETE'])
 @api_login_required
 def api_project_detail(request, project_name: str):
-    """Project settings: read, update, or delete the project entirely."""
+    """Project settings: read, create, update, or delete the project entirely."""
     try:
         name = _project_name_from_path(project_name)
     except ValueError as e:
@@ -827,6 +827,17 @@ def api_project_detail(request, project_name: str):
     if request.method == 'DELETE':
         result = hist.delete_project(user_id=uid, project=name)
         return JsonResponse({'ok': True, **result})
+
+    # POST: create a new empty project (enforces project cap)
+    if request.method == 'POST':
+        existing = hist.list_projects(user_id=uid)
+        if name not in existing and len(existing) >= MAX_PROJECTS:
+            return JsonResponse(
+                {'error': f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'},
+                status=403,
+            )
+        saved = hist.save_project_settings(user_id=uid, project=name)
+        return JsonResponse({'project': name, **saved})
 
     # PATCH: update settings
     try:
@@ -1024,9 +1035,7 @@ def api_compare(request):
 @api_login_required
 @_rate_limit(max_calls=30, window_seconds=60)
 def api_share(request):
-    """Save an analysis result and return a short share ID. Pro only."""
-    if not _is_pro(request.user):
-        return JsonResponse({'error': 'Sharing is a Pro feature. Upgrade to share analysis links.'}, status=403)
+    """Save an analysis result and return a short share ID."""
     try:
         body = json.loads(request.body)
         analysis = body.get('analysis')

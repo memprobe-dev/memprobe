@@ -203,7 +203,7 @@
       {% if is_authenticated %}
       <button class="atab-btn" onclick="showAnalysisTab('treemap',this)">Treemap</button>
       <button class="atab-btn" onclick="showAnalysisTab('symbols',this)">Symbols</button>
-      <button class="atab-btn" id="atab-insights-btn" onclick="showAnalysisTab('insights',this)">Insights {% if not is_pro %}<span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;vertical-align:middle">Pro</span>{% endif %}</button>
+      <button class="atab-btn" id="atab-insights-btn" onclick="showAnalysisTab('insights',this)">Insights <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;vertical-align:middle">Pro</span></button>
       <button class="atab-btn" onclick="showAnalysisTab('export',this)">Export &amp; share</button>
       {% endif %}
     </div>
@@ -309,15 +309,6 @@
 
     <!-- Tab: Insights -->
     <div class="atab-panel" id="atab-insights">
-      {% if not is_pro %}
-      <div class="card" style="text-align:center;padding:40px 24px">
-        <div style="font-size:22px;margin-bottom:10px">Insights</div>
-        <div style="font-size:13px;color:var(--text2);line-height:1.6;max-width:420px;margin:0 auto 20px">
-          Warnings, address space visualization, and binary insights are Pro features. Upgrade to unlock them.
-        </div>
-        <span style="display:inline-block;font-size:11px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:5px;padding:3px 10px;letter-spacing:.05em">Pro</span>
-      </div>
-      {% else %}
       <div class="card" id="card-warnings" style="display:none">
         <div class="card-hd"><span class="card-title">Warnings</span></div>
         <div class="warn-list" id="warn-list"></div>
@@ -330,7 +321,6 @@
         <div class="card-hd"><span class="card-title">Binary insights</span></div>
         <div id="insights-body"></div>
       </div>
-      {% endif %}
     </div><!-- /atab-insights -->
     <div class="addr-tooltip" id="addr-tooltip"></div>
 
@@ -380,14 +370,14 @@
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
               <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span>
             </label>
-            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:{% if is_pro %}var(--text){% else %}var(--text3){% endif %};cursor:{% if is_pro %}pointer{% else %}default{% endif %};font-weight:600;opacity:{% if is_pro %}1{% else %}.55{% endif %}">
-              <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer" {% if not is_pro %}disabled{% endif %}> TOML <span style="font-weight:400;font-family:var(--mono);font-size:11px">.toml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
             </label>
-            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:{% if is_pro %}var(--text){% else %}var(--text3){% endif %};cursor:{% if is_pro %}pointer{% else %}default{% endif %};font-weight:600;opacity:{% if is_pro %}1{% else %}.55{% endif %}">
-              <input type="radio" name="exp-fmt" value="csv" style="accent-color:var(--accent);cursor:pointer" {% if not is_pro %}disabled{% endif %}> CSV <span style="font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="csv" style="accent-color:var(--accent);cursor:pointer"> CSV <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
             </label>
-            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:{% if is_pro %}var(--text){% else %}var(--text3){% endif %};cursor:{% if is_pro %}pointer{% else %}default{% endif %};font-weight:600;opacity:{% if is_pro %}1{% else %}.55{% endif %}">
-              <input type="radio" name="exp-fmt" value="xml" style="accent-color:var(--accent);cursor:pointer" {% if not is_pro %}disabled{% endif %}> XML <span style="font-weight:400;font-family:var(--mono);font-size:11px">.xml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+            <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
+              <input type="radio" name="exp-fmt" value="xml" style="accent-color:var(--accent);cursor:pointer"> XML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.xml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
             </label>
           </div>
 
@@ -406,10 +396,9 @@
       <div class="card">
         <div class="card-hd">
           <span class="card-title">Share a read-only link</span>
-          {% if not is_pro %}<span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>{% endif %}
+          <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>
         </div>
         <div style="padding:20px">
-          {% if is_pro %}
           <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px">
             Generates a public URL that anyone can open. The link contains the same analysis you see here. No login required to view.
           </div>
@@ -417,11 +406,6 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Create share link
           </button>
-          {% else %}
-          <div style="font-size:13px;color:var(--text2);line-height:1.6">
-            Share links let anyone view your analysis without signing in. This is a Pro feature.
-          </div>
-          {% endif %}
         </div>
       </div>
     </div><!-- /atab-export -->
@@ -451,11 +435,25 @@
         <div class="result-title">Projects <span id="proj-counter" style="font-size:13px;font-weight:400;color:var(--text3);margin-left:8px"></span></div>
         <div style="font-size:12px;color:var(--text3);margin-top:2px">View build trends, set budgets, and manage all your projects.</div>
       </div>
-      <button class="btn-sm" onclick="loadProjects()">Refresh</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn-sm" onclick="showCreateProject()">+ New project</button>
+        <button class="btn-sm" onclick="loadProjects()">Refresh</button>
+      </div>
+    </div>
+
+    <div id="create-project-row" style="display:none;margin-bottom:16px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="new-proj-name-input" type="text" placeholder="Project name" maxlength="200"
+          style="flex:1;padding:9px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px;font-family:inherit;outline:none"
+          onkeydown="if(event.key==='Enter')createProject();if(event.key==='Escape')hideCreateProject()">
+        <button class="btn-sm" onclick="createProject()">Create</button>
+        <button class="btn-sm" onclick="hideCreateProject()" style="background:none;border-color:transparent;color:var(--text3)">Cancel</button>
+      </div>
+      <div id="create-proj-err" style="font-size:12px;color:var(--red);margin-top:6px;display:none"></div>
     </div>
 
     <div id="projects-empty" style="display:none;text-align:center;padding:50px 20px;color:var(--text3);font-size:14px">
-      No projects yet. Pick or create a project when you analyze a file to start tracking it here.
+      No projects yet. Create one above or pick a project name when you analyze a file.
     </div>
 
     <div id="projects-list"></div>

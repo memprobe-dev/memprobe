@@ -246,10 +246,6 @@ function downloadExport() {
   const parts = _expSelectedParts();
   if (!parts.length) { _expShowErr('Select at least one section to include.'); return; }
   const fmt = _expSelectedFormat();
-  if (!_IS_PRO && (fmt === 'toml' || fmt === 'csv' || fmt === 'xml')) {
-    _expShowErr('TOML, CSV, and XML export are Pro features.');
-    return;
-  }
   const data = _expBuildPayload(parts);
   const base = _expBasename();
 

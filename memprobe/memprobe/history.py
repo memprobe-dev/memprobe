@@ -225,45 +225,54 @@ def clear(user_id: str) -> None:
 
 
 def list_projects(user_id: str) -> list:
-    """Return all distinct project names for user_id, alphabetically."""
+    """Return all distinct project names for user_id (including empty ones), alphabetically."""
     with _db() as conn:
         rows = _fetchall(conn,
-            """SELECT DISTINCT project FROM builds
-               WHERE user_id = %s AND project IS NOT NULL
+            """SELECT project FROM (
+                   SELECT DISTINCT project FROM builds
+                   WHERE user_id = %s AND project IS NOT NULL
+                   UNION
+                   SELECT project FROM project_settings
+                   WHERE user_id = %s
+               ) combined
                ORDER BY project""",
-            (user_id,),
+            (user_id, user_id),
         )
     return [r['project'] for r in rows]
 
 
 def list_project_summaries(user_id: str) -> list:
-    """Return one summary row per project, most-recently-active first."""
+    """Return one summary row per project (including empty ones), most-recently-active first."""
     with _db() as conn:
+        # Union builds-based projects with settings-only projects so newly
+        # created empty projects appear in the picker immediately.
         projects = _fetchall(conn,
             """SELECT
-                   b.project,
-                   COUNT(*)         AS build_count,
-                   MAX(b.timestamp) AS last_build,
-                   MAX(b.id)        AS latest_id
-               FROM builds b
-               WHERE b.user_id = %s AND b.project IS NOT NULL
-               GROUP BY b.project
-               ORDER BY MAX(b.timestamp) DESC""",
+                   COALESCE(b.project, ps.project) AS project,
+                   COUNT(b.id)                     AS build_count,
+                   MAX(b.timestamp)                AS last_build,
+                   MAX(b.id)                       AS latest_id
+               FROM project_settings ps
+               LEFT JOIN builds b
+                   ON b.user_id = ps.user_id AND b.project = ps.project
+               WHERE ps.user_id = %s
+               GROUP BY COALESCE(b.project, ps.project)
+               ORDER BY MAX(b.timestamp) DESC NULLS LAST""",
             (user_id,),
         )
 
         result = []
         for p in projects:
-            latest = _fetchone(conn,
+            latest = (_fetchone(conn,
                 "SELECT total_flash, total_ram, source_file FROM builds WHERE id = %s",
                 (p['latest_id'],),
-            ) or {}
-            prev = _fetchone(conn,
+            ) or {}) if p['latest_id'] else {}
+            prev = (_fetchone(conn,
                 """SELECT total_flash, total_ram FROM builds
                    WHERE project = %s AND user_id = %s AND id < %s
                    ORDER BY id DESC LIMIT 1""",
                 (p['project'], user_id, p['latest_id']),
-            )
+            )) if p['latest_id'] else None
             lb = p['last_build']
             result.append({
                 'project':     p['project'],

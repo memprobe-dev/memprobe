@@ -22,6 +22,37 @@ const _fmtRel = (iso) => {
   return `${Math.floor(h/24)}d ago`;
 };
 
+function showCreateProject() {
+  const row = document.getElementById('create-project-row');
+  if (row) { row.style.display = ''; document.getElementById('new-proj-name-input').focus(); }
+}
+
+function hideCreateProject() {
+  const row = document.getElementById('create-project-row');
+  if (row) row.style.display = 'none';
+  const inp = document.getElementById('new-proj-name-input');
+  if (inp) inp.value = '';
+  const err = document.getElementById('create-proj-err');
+  if (err) err.style.display = 'none';
+}
+
+async function createProject() {
+  const inp = document.getElementById('new-proj-name-input');
+  const err = document.getElementById('create-proj-err');
+  const name = inp?.value.trim();
+  if (!name) { if (err) { err.textContent = 'Enter a project name.'; err.style.display = ''; } return; }
+  const encoded = encodeURIComponent(name);
+  const res = await fetch(`/api/project/${encoded}`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok) {
+    if (err) { err.textContent = data.error || 'Could not create project.'; err.style.display = ''; }
+    return;
+  }
+  hideCreateProject();
+  await loadProjects();
+  await loadProjectPicker();
+}
+
 async function loadProjects() {
   try {
     const r = await fetch('/api/projects-full');

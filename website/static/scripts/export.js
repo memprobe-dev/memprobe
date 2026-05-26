@@ -67,7 +67,7 @@ function _expToTOML(data) {
     if (typeof v === 'string')  return JSON.stringify(v);
     if (typeof v === 'number' || typeof v === 'boolean') return String(v);
     if (Array.isArray(v)) {
-      // Array of primitives only — arrays of objects are emitted as [[table]] below
+      // Array of primitives only: arrays of objects are emitted as [[table]] below
       return '[' + v.map(x => tomlVal(x)).join(', ') + ']';
     }
     return JSON.stringify(String(v));
@@ -137,7 +137,7 @@ function _expToXML(data, rootName='analysis') {
   return lines.join('\n');
 }
 
-// CSV — produces one CSV per "table-like" array; bundled into a .zip if >1
+// CSV: produces one CSV per "table-like" array; bundled into a .zip if >1
 function _expArrayToCSV(arr) {
   if (!arr.length) return '';
   const cols = [...new Set(arr.flatMap(o => Object.keys(o)))];
@@ -184,7 +184,7 @@ function _expCollectCSVFiles(data) {
   return files;
 }
 
-// Minimal zip writer (store, no compression) — keeps us dependency-free
+// Minimal zip writer (store, no compression): keeps us dependency-free
 function _expMakeZip(files) {
   const enc = new TextEncoder();
   const chunks = [];
@@ -246,6 +246,10 @@ function downloadExport() {
   const parts = _expSelectedParts();
   if (!parts.length) { _expShowErr('Select at least one section to include.'); return; }
   const fmt = _expSelectedFormat();
+  if (!_IS_PRO && (fmt === 'toml' || fmt === 'csv' || fmt === 'xml')) {
+    _expShowErr('TOML, CSV, and XML export are Pro features.');
+    return;
+  }
   const data = _expBuildPayload(parts);
   const base = _expBasename();
 

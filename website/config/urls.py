@@ -1,11 +1,10 @@
 """Root URL configuration."""
 
+from django.contrib import admin
 from django.urls import path, include
 
 urlpatterns = [
-    # Our app (includes /login, /logout, all API routes)
+    path('admin/', admin.site.urls),
     path('', include('webapp.urls')),
-    # allauth handles OAuth callbacks, token exchange, etc.
-    # Our custom /login page links to these provider URLs.
     path('accounts/', include('allauth.urls')),
 ]

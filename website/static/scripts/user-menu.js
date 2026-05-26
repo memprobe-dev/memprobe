@@ -1,5 +1,5 @@
 // User-menu dropdown behavior.
-// Safe to load on every page — checks the menu exists before acting.
+// Safe to load on every page: checks the menu exists before acting.
 
 function toggleUserMenu() {
   const dd = document.getElementById('user-dropdown');

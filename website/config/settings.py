@@ -54,6 +54,7 @@ ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
 INSTALLED_APPS = [
     # Django core (required by auth, sessions, allauth)
+    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

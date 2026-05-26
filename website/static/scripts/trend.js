@@ -28,6 +28,8 @@ async function loadProjects() {
     _projects = r.ok ? await r.json() : [];
     if (!Array.isArray(_projects)) _projects = [];
   } catch (e) { _projects = []; }
+  const counter = document.getElementById('proj-counter');
+  if (counter) counter.textContent = `${_projects.length} / ${_MAX_PROJECTS}`;
   renderProjects();
 }
 

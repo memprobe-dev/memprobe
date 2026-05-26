@@ -141,8 +141,21 @@ def _uid(request) -> str:
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+MAX_UPLOAD_BYTES  = 30 * 1024 * 1024   # 30 MB
+MAX_PROJECTS      = 2
+MAX_BUILDS        = 10
+
+
+def _is_pro(user) -> bool:
+    """Return True if the user has a Pro subscription. Stub: always False until billing is wired up."""
+    return False
+
+
 def _load_upload(django_file):
     """Parse a Django InMemoryUploadedFile into a MemoryMap."""
+    if django_file.size > MAX_UPLOAD_BYTES:
+        raise ValueError(f"File too large ({django_file.size // (1024*1024)} MB). Maximum is 30 MB.")
+
     filename = django_file.name or 'firmware'
     suffix = Path(filename).suffix.lower()
     if suffix not in _SUPPORTED:
@@ -381,11 +394,11 @@ def _revoke_oauth_grant(social_account) -> bool:
     """Best-effort: revoke the user's OAuth grant at the provider.
 
     After this call, the provider will require the user to re-authorize
-    (re-consent) the next time they click "Continue with Google/GitHub" —
+    (re-consent) the next time they click "Continue with Google/GitHub":
     avoiding the confusing "auto sign-in after deletion" experience.
 
     Returns True if the revocation appears to have succeeded. Failures are
-    LOGGED but NOT raised — deletion proceeds regardless, since cleaning up
+    LOGGED but NOT raised: deletion proceeds regardless, since cleaning up
     our own records is more important than the remote revocation succeeding.
 
     We use the standard library's urllib so we don't pull in `requests`
@@ -413,7 +426,7 @@ def _revoke_oauth_grant(social_account) -> bool:
 
     token = SocialToken.objects.filter(account=social_account).first()
     if not token or not token.token:
-        # No token stored — happens when account predates SOCIALACCOUNT_STORE_TOKENS=True,
+        # No token stored: happens when account predates SOCIALACCOUNT_STORE_TOKENS=True,
         # or token was already cleared. We can't revoke without it.
         log.warning(
             "Cannot revoke %s grant for user %s: no stored OAuth token. "
@@ -436,7 +449,7 @@ def _revoke_oauth_grant(social_account) -> bool:
             return True
 
         if provider == 'github':
-            # GitHub: DELETE /applications/{client_id}/grant — revokes the
+            # GitHub: DELETE /applications/{client_id}/grant: revokes the
             # entire authorization grant (not just the token).
             # https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization
             #
@@ -445,7 +458,7 @@ def _revoke_oauth_grant(social_account) -> bool:
             client_id = os.environ.get('GITHUB_CLIENT_ID', '')
             client_secret = os.environ.get('GITHUB_CLIENT_SECRET', '')
             if not client_id or not client_secret:
-                log.error("GITHUB_CLIENT_ID/SECRET missing — cannot revoke grant")
+                log.error("GITHUB_CLIENT_ID/SECRET missing: cannot revoke grant")
                 return False
             url = f'https://api.github.com/applications/{client_id}/grant'
             body = json.dumps({'access_token': token.token}).encode()
@@ -578,6 +591,9 @@ def index(request):
         'asset_version': _asset_version(),
         'first_name': first_name,
         'is_authenticated': is_authenticated,
+        'is_pro': _is_pro(request.user) if request.user.is_authenticated else False,
+        'max_builds': MAX_BUILDS,
+        'max_projects': MAX_PROJECTS,
         'csrf_token': csrf_get_token(request),
     })
     resp['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -627,8 +643,27 @@ def api_analyze(request):
     if request.user.is_authenticated:
         project = request.POST.get('project', '').strip() or None
         result['project'] = project
+        uid = _uid(request)
+
+        # Enforce project cap
+        if project:
+            existing_projects = hist.list_projects(user_id=uid)
+            if project not in existing_projects and len(existing_projects) >= MAX_PROJECTS:
+                return JsonResponse(
+                    {'error': f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'},
+                    status=403,
+                )
+
+        # Enforce total build history cap (10 across all projects)
+        all_builds = hist.list_builds(user_id=uid)
+        if len(all_builds) >= MAX_BUILDS:
+            return JsonResponse(
+                {'error': f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'},
+                status=403,
+            )
+
         try:
-            build_id = hist.save(mmap, user_id=_uid(request), analysis_json=result, project=project)
+            build_id = hist.save(mmap, user_id=uid, analysis_json=result, project=project)
             result['build_id'] = build_id
         except Exception:
             pass
@@ -989,7 +1024,9 @@ def api_compare(request):
 @api_login_required
 @_rate_limit(max_calls=30, window_seconds=60)
 def api_share(request):
-    """Save an analysis result and return a short share ID."""
+    """Save an analysis result and return a short share ID. Pro only."""
+    if not _is_pro(request.user):
+        return JsonResponse({'error': 'Sharing is a Pro feature. Upgrade to share analysis links.'}, status=403)
     try:
         body = json.loads(request.body)
         analysis = body.get('analysis')

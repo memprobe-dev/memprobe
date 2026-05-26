@@ -3,6 +3,8 @@ async function loadHist() {
   if (!res.ok) return;
   const builds = await res.json();
   const el = document.getElementById('hist-list');
+  const counter = document.getElementById('hist-counter');
+  if (counter) counter.textContent = `${builds.length} / ${_MAX_BUILDS}`;
   if (!builds.length) { el.innerHTML = '<div class="hist-empty">No builds yet.</div>'; return; }
   el.innerHTML = '<div class="hist-row">' + builds.map(b => {
     const meta = [b.timestamp?.slice(0,19).replace('T',' '), b.git_branch, b.git_hash?.slice(0,7)].filter(Boolean).join('  ');

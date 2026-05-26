@@ -344,6 +344,12 @@ def docs(request):
     return render(request, 'docs.html')
 
 
+def pricing(request):
+    return render(request, 'pricing.html', {
+        'is_authenticated': request.user.is_authenticated,
+    })
+
+
 def login_view(request):
     """Render the login page. If already logged in, redirect to /app."""
     if request.user.is_authenticated:

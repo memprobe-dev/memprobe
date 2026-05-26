@@ -1,0 +1,172 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>memprobe.dev | Pricing</title>
+<meta name="description" content="memprobe is free during beta. See what's included and what's coming.">
+<link rel="icon" href="{% static 'logo.svg' %}" type="image/svg+xml">
+<link rel="stylesheet" href="{% static 'styles/base.css' %}">
+<script src="{% static 'scripts/theme-init.js' %}"></script>
+<style>
+  body { max-width: 860px; margin: 0 auto; padding: 60px 24px 100px; }
+  .back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
+          color: var(--text3); margin-bottom: 48px; text-decoration: none; }
+  .back:hover { color: var(--text); }
+  .page-title { font-size: 32px; font-weight: 700; text-align: center; margin-bottom: 8px; }
+  .page-sub { text-align: center; font-size: 15px; color: var(--text2); margin-bottom: 56px; }
+  .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 580px) { .plans { grid-template-columns: 1fr; } }
+  .plan { border: 1px solid var(--border); border-radius: 14px; padding: 32px 28px; background: var(--bg2); }
+  .plan.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 4px 24px rgba(96,165,250,.12); }
+  .plan.dim { opacity: .5; }
+  .plan-badge { font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+                color: var(--text3); margin-bottom: 10px; }
+  .plan.active .plan-badge { color: var(--accent); }
+  .plan-name { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .plan-price { font-size: 36px; font-weight: 800; margin-bottom: 4px; line-height: 1; }
+  .plan-price span { font-size: 16px; font-weight: 400; color: var(--text3); }
+  .plan-desc { font-size: 13px; color: var(--text2); margin-bottom: 28px; line-height: 1.6; }
+  .plan-divider { border: none; border-top: 1px solid var(--border); margin: 0 0 24px; }
+  .feature-list { list-style: none; padding: 0; margin: 0 0 32px; display: flex; flex-direction: column; gap: 12px; }
+  .feature-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .feature-list li .check { flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; }
+  .check-yes { color: var(--accent); }
+  .check-soon { color: var(--text3); }
+  .plan-cta { display: block; text-align: center; padding: 12px 20px; border-radius: 9px;
+              font-size: 14px; font-weight: 700; text-decoration: none; }
+  .plan-cta.primary { background: var(--accent); color: #fff; }
+  .plan-cta.primary:hover { opacity: .9; }
+  .plan-cta.disabled { background: var(--bg4); color: var(--text3); cursor: default; pointer-events: none; }
+  .coming-soon-tag { font-size: 11px; font-weight: 700; background: var(--bg4); color: var(--text3);
+                      border: 1px solid var(--border2); border-radius: 4px; padding: 1px 6px;
+                      letter-spacing: .05em; margin-left: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+  <a href="/" class="back">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+
+  <div class="page-title">Pricing</div>
+  <div class="page-sub">Free during beta. Pro features are available to everyone right now.</div>
+
+  <div style="max-width:520px;margin:0 auto 40px;background:linear-gradient(135deg,rgba(96,165,250,.12),rgba(61,214,140,.08));border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:18px 24px;display:flex;align-items:center;gap:16px">
+    <div style="flex-shrink:0;width:36px;height:36px;background:rgba(96,165,250,.15);border-radius:8px;display:flex;align-items:center;justify-content:center">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5b9cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+      </svg>
+    </div>
+    <div>
+      <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:3px">Beta early-adopter discount</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.5">Sign up now during beta to get <strong style="color:var(--accent)">40% off Pro</strong> for life when we launch.</div>
+    </div>
+  </div>
+
+  <div class="plans">
+
+    <!-- Free Beta -->
+    <div class="plan active">
+      <div class="plan-badge">Current plan</div>
+      <div class="plan-name">Free Beta</div>
+      <div class="plan-price">$0 <span>/ month</span></div>
+      <div class="plan-desc">Everything included while memprobe is in beta. No credit card required.</div>
+      <hr class="plan-divider">
+      <ul class="feature-list">
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          ELF and linker map analysis
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Symbol breakdown and treemap
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Warnings
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Binary insights <span class="coming-soon-tag">Pro</span>
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          More advanced warnings <span class="coming-soon-tag">Pro</span>
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Build history (10 builds)
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Up to 2 projects
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Export: JSON, TOML, CSV, XML <span class="coming-soon-tag">Pro</span>
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Shareable read-only links <span class="coming-soon-tag">Pro</span>
+        </li>
+        <li>
+          <svg class="check check-yes" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          30 MB file size limit
+        </li>
+      </ul>
+      {% if is_authenticated %}
+      <a href="/app" class="plan-cta primary">Go to app</a>
+      {% else %}
+      <a href="/login" class="plan-cta primary">Get started free</a>
+      {% endif %}
+    </div>
+
+    <!-- Pro (coming soon) -->
+    <div class="plan dim">
+      <div class="plan-badge">Coming soon</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price" style="color:var(--text3)">— <span>/ month</span></div>
+      <div class="plan-desc">Everything in Free, plus higher limits and team features. Price to be announced.</div>
+      <hr class="plan-divider">
+      <ul class="feature-list">
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Everything in Free Beta
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Advanced warnings
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Binary insights
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          More projects and build history
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Larger file uploads
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Priority analysis queue
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Team sharing and collaboration
+        </li>
+        <li>
+          <svg class="check check-soon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          More to come
+        </li>
+      </ul>
+      <span class="plan-cta disabled">Coming soon</span>
+    </div>
+
+  </div>
+</body>
+</html>

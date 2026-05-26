@@ -19,7 +19,7 @@
 <body>
 
 <div style="background:var(--bg3);border-bottom:1px solid var(--border);text-align:center;padding:8px 16px;font-size:12px;color:var(--text2);line-height:1.5">
-  memprobe is in free beta. Some features will move to a paid plan when we launch: we'll give at least 2 weeks notice.
+  memprobe is in free beta. Sign up now during beta to get <strong>40% off Pro</strong> for life. <a href="/pricing" style="color:var(--accent);text-decoration:none">See pricing</a>
 </div>
 
 <header>
@@ -74,6 +74,7 @@
           Delete account
         </a>
         <div class="user-dropdown-divider"></div>
+        <a href="/pricing" class="user-dropdown-item legal-item" target="_blank" rel="noopener">Pricing</a>
         <a href="/privacy" class="user-dropdown-item legal-item" target="_blank" rel="noopener">Privacy Policy</a>
         <a href="/terms"   class="user-dropdown-item legal-item" target="_blank" rel="noopener">Terms of Service</a>
       </div>
@@ -310,7 +311,9 @@
     <!-- Tab: Insights -->
     <div class="atab-panel" id="atab-insights">
       <div class="card" id="card-warnings" style="display:none">
-        <div class="card-hd"><span class="card-title">Warnings</span></div>
+        <div class="card-hd">
+          <span class="card-title">Warnings</span>
+        </div>
         <div class="warn-list" id="warn-list"></div>
       </div>
       <div class="card" id="card-addrmap" style="display:none">
@@ -318,7 +321,10 @@
         <div id="addrmap-body"></div>
       </div>
       <div class="card" id="card-insights" style="display:none">
-        <div class="card-hd"><span class="card-title">Binary insights</span></div>
+        <div class="card-hd">
+          <span class="card-title">Binary insights</span>
+          <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>
+        </div>
         <div id="insights-body"></div>
       </div>
     </div><!-- /atab-insights -->
@@ -368,7 +374,7 @@
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Format</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
-              <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span>
+              <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
               <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>

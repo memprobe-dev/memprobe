@@ -50,11 +50,11 @@ SECRET_KEY = _secret_key
 _allowed = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
+
 # ── Installed apps ────────────────────────────────────────────────────────────
 
 INSTALLED_APPS = [
     # Django core (required by auth, sessions, allauth)
-    'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',

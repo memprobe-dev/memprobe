@@ -16,6 +16,10 @@
   <meta name="twitter:description" content="See where every byte goes. Drop in an ELF or linker map and get a full symbol breakdown in seconds.">
   <meta name="twitter:image"      content="https://memprobe.dev/static/og-image.png">
   <link rel="stylesheet" href="/static/styles/base.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/styles/layout.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/styles/components.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/styles/trend.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/styles/table.css?v={{ asset_version }}">
   <style>
     body { display: flex; flex-direction: column; min-height: 100vh; overflow-x: hidden; }
 
@@ -84,7 +88,7 @@
     .hero {
       position: relative;
       display: flex; flex-direction: column; align-items: center;
-      text-align: center; padding: 80px 24px 40px;
+      text-align: center; padding: 52px 24px 32px;
     }
     .hero-inner { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: center; width: 100%; }
 
@@ -96,8 +100,8 @@
     }
     .brand-chip {
       position: relative;
-      width: 72px; height: 72px;
-      margin-bottom: 22px;
+      width: 56px; height: 56px;
+      margin-bottom: 16px;
     }
     .brand-chip::before {
       content: ""; position: absolute; inset: -55%;
@@ -123,7 +127,7 @@
     }
 
     .brand-name {
-      font-size: clamp(64px, 11vw, 128px);
+      font-size: clamp(52px, 9vw, 96px);
       font-weight: 800;
       letter-spacing: -.06em;
       line-height: .95;
@@ -257,7 +261,7 @@
     .demo-wrap {
       position: relative;
       width: 100%; max-width: 900px;
-      margin: 48px auto 0;
+      margin: 32px auto 0;
       padding: 1.5px;
       border-radius: 16px;
       overflow: hidden;
@@ -462,7 +466,6 @@
     }
     .how-step h3 { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; letter-spacing: -.015em; }
     .how-step p { font-size: 13px; color: var(--text2); line-height: 1.55; }
-    /* connector arrows between cards on wide screens */
     .how-step:not(:last-child)::after {
       content: ""; position: absolute;
       top: 44px; right: -14px; width: 28px; height: 2px;
@@ -473,12 +476,72 @@
       .how-step:not(:last-child)::after { display: none; }
     }
 
+    /* ── Recording section ──────────────────────── */
+    .recording-section { padding: 56px 24px; max-width: 1080px; margin: 0 auto; width: 100%; }
+    .recording-frame {
+      position: relative; border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--border); background: var(--bg2);
+      box-shadow: 0 24px 64px rgba(0,0,0,.4);
+    }
+    .rec-bar { background: var(--bg3); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+    .rec-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .rec-url { flex: 1; background: var(--bg4); border-radius: 6px; padding: 4px 12px; font-size: 11px; font-family: var(--mono); color: var(--text3); text-align: center; max-width: 340px; margin: 0 auto; }
+    .rec-body { position: relative; aspect-ratio: 16/9; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+
+    /* ── CTA section ────────────────────────────── */
+    .cta-section {
+      padding: 64px 24px 72px; text-align: center;
+      max-width: 680px; margin: 0 auto;
+    }
+    .cta-section h2 { font-size: clamp(28px, 3.5vw, 42px); font-weight: 800; letter-spacing: -.03em; color: var(--text); margin-bottom: 12px; line-height: 1.1; }
+    .cta-section p  { font-size: 15px; color: var(--text2); line-height: 1.6; margin-bottom: 32px; }
+    .cta-beta-note  { margin-top: 18px; font-size: 12px; color: var(--text3); }
+    .cta-beta-note a { color: var(--accent); text-decoration: none; }
+
     /* ── Footer ─────────────────────────────────── */
     footer {
       margin-top: auto; border-top: 1px solid var(--border);
-      padding: 22px 32px; display: flex; align-items: center; justify-content: center;
-      font-size: 12px; color: var(--text3); flex-wrap: wrap; gap: 10px;
+      padding: 48px 40px 32px;
     }
+    .footer-inner {
+      max-width: 1080px; margin: 0 auto;
+      display: grid; grid-template-columns: 2fr 1fr 1fr;
+      gap: 40px;
+    }
+    .footer-brand {}
+    .footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--text); margin-bottom: 10px; }
+    .footer-logo-name { font-size: 15px; font-weight: 700; letter-spacing: -.03em; }
+    .footer-tagline { font-size: 13px; color: var(--text3); line-height: 1.55; max-width: 220px; margin-bottom: 18px; }
+    .footer-copy { font-size: 12px; color: var(--text3); margin-top: 24px; }
+    .footer-col h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--text3); margin-bottom: 14px; }
+    .footer-col a { display: block; font-size: 13px; color: var(--text2); text-decoration: none; margin-bottom: 10px; transition: color .15s; }
+    .footer-col a:hover { color: var(--text); }
+    .footer-bottom { max-width: 1080px; margin: 32px auto 0; padding-top: 20px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; font-size: 12px; color: var(--text3); }
+    .footer-bottom a { color: var(--text3); text-decoration: none; }
+    .footer-bottom a:hover { color: var(--text); }
+    @media (max-width: 680px) {
+      .footer-inner { grid-template-columns: 1fr 1fr; }
+      .footer-brand { grid-column: 1 / -1; }
+      footer { padding: 36px 24px 24px; }
+    }
+    @media (max-width: 400px) {
+      .footer-inner { grid-template-columns: 1fr; }
+    }
+
+    /* ── Scroll-to-top button ───────────────────── */
+    .scroll-top {
+      position: fixed; bottom: 28px; right: 28px; z-index: 500;
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--bg3); border: 1px solid var(--border2);
+      color: var(--text2); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,.3);
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s, transform .2s, background .15s, color .15s;
+      transform: translateY(8px);
+    }
+    .scroll-top.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .scroll-top:hover { background: var(--bg4); color: var(--text); }
 
     /* Reduced motion */
     @media (prefers-reduced-motion: reduce) {
@@ -499,12 +562,12 @@
     /* Mobile */
     @media (max-width: 680px) {
       .lnav { padding: 0 16px; }
-      .hero { padding: 48px 16px 28px; }
+      .hero { padding: 36px 16px 20px; }
       .sw-body { padding: 14px; }
       .sw-kpi-row { gap: 8px; }
       .sw-sym-bar-wrap { display: none; }
-      .features-section, .how-section { padding-left: 16px; padding-right: 16px; }
-      footer { justify-content: center; }
+      .features-section, .how-section, .recording-section { padding-left: 16px; padding-right: 16px; }
+      .scroll-top { bottom: 16px; right: 16px; }
     }
   </style>
 </head>
@@ -607,86 +670,6 @@
         <span><strong>Your binaries stay in your session and are never stored.</strong></span>
       </div>
 
-      <div class="demo-wrap">
-        <div class="stats-window" id="demo-window">
-          <div class="sw-bar">
-            <div class="sw-dot" style="background:#f06060"></div>
-            <div class="sw-dot" style="background:#f0a040"></div>
-            <div class="sw-dot" style="background:#3dd68c"></div>
-            <span class="sw-filename">firmware.elf</span>
-          </div>
-          <div class="sw-body">
-            <div class="sw-kpi-row">
-              <div class="sw-kpi">
-                <div class="sw-kpi-label">Flash used</div>
-                <div class="sw-kpi-val" data-count-to="187" data-suffix=" KB">0 KB</div>
-                <div class="sw-kpi-sub">of 512 KB (36%)</div>
-                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="36" style="background:var(--accent)"></div></div>
-              </div>
-              <div class="sw-kpi">
-                <div class="sw-kpi-label">RAM used</div>
-                <div class="sw-kpi-val" data-count-to="41" data-suffix=" KB">0 KB</div>
-                <div class="sw-kpi-sub">of 128 KB (32%)</div>
-                <div class="sw-kpi-bar"><div class="sw-kpi-bar-fill" data-bar="32" style="background:var(--green)"></div></div>
-              </div>
-              <div class="sw-kpi">
-                <div class="sw-kpi-label">Symbols</div>
-                <div class="sw-kpi-val" data-count-to="1842" data-comma="true">0</div>
-                <div class="sw-kpi-sub">across 38 source files</div>
-              </div>
-              <div class="sw-kpi">
-                <div class="sw-kpi-label">Duplicate symbols</div>
-                <div class="sw-kpi-val" data-count-to="7">0</div>
-                <div class="sw-kpi-sub">~3.2 KB recoverable flash</div>
-              </div>
-            </div>
-
-            <div class="sw-section-title">Largest symbols by flash</div>
-            <div class="sw-sym-list">
-              <div class="sw-sym-row" data-stagger="1">
-                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
-                <span class="sw-sym-name">mbedtls_sha256_process</span>
-                <span class="sw-sym-sec">.text</span>
-                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="100" style="background:var(--c-text)"></div></div>
-                <span class="sw-sym-size">14.2 KB</span>
-              </div>
-              <div class="sw-sym-row" data-stagger="2">
-                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
-                <span class="sw-sym-name">HAL_UART_IRQHandler</span>
-                <span class="sw-sym-sec">.text</span>
-                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="62" style="background:var(--c-text)"></div></div>
-                <span class="sw-sym-size">8.8 KB</span>
-              </div>
-              <div class="sw-sym-row" data-stagger="3">
-                <div class="sw-sym-dot" style="background:var(--c-rodata)"></div>
-                <span class="sw-sym-name">font_DejaVuSans_16px</span>
-                <span class="sw-sym-sec">.rodata</span>
-                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="51" style="background:var(--c-rodata)"></div></div>
-                <span class="sw-sym-size">7.3 KB</span>
-              </div>
-              <div class="sw-sym-row" data-stagger="4">
-                <div class="sw-sym-dot" style="background:var(--c-text)"></div>
-                <span class="sw-sym-name">lwip_tcp_input</span>
-                <span class="sw-sym-sec">.text</span>
-                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="38" style="background:var(--c-text)"></div></div>
-                <span class="sw-sym-size">5.4 KB</span>
-              </div>
-              <div class="sw-sym-row" data-stagger="5">
-                <div class="sw-sym-dot" style="background:var(--c-bss)"></div>
-                <span class="sw-sym-name">g_rx_dma_buffer</span>
-                <span class="sw-sym-sec">.bss</span>
-                <div class="sw-sym-bar-wrap"><div class="sw-sym-bar-fill" data-bar="28" style="background:var(--c-bss)"></div></div>
-                <span class="sw-sym-size">4.0 KB</span>
-              </div>
-            </div>
-
-            <div class="sw-warn">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <div class="sw-warn-text"><strong>Float printf linked</strong> (_printf_float). ~8 KB flash. Drop <code style="font-family:var(--mono);font-size:11px">-u _printf_float</code> if unused.</div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </section>
 
@@ -727,6 +710,454 @@
         <span class="mq-pill" aria-hidden="true"><span class="mq-dot" style="background:#a07ae0"></span>FreeRTOS</span>
         <span class="mq-pill" aria-hidden="true"><span class="mq-dot" style="background:#a07ae0"></span>Zephyr</span>
         <span class="mq-pill" aria-hidden="true"><span class="mq-dot" style="background:#a07ae0"></span>mbedTLS</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Demo window -->
+  <section class="recording-section" id="recordings">
+    <div class="section-head">
+      <h2>See what you get.</h2>
+      <div class="section-sub">A real analysis of an STM32 firmware binary.</div>
+    </div>
+    <div class="demo-wrap">
+    <div class="stats-window recording-frame">
+      <!-- Browser chrome -->
+      <div class="rec-bar">
+        <div class="rec-dot" style="background:#f06060"></div>
+        <div class="rec-dot" style="background:#f0a040"></div>
+        <div class="rec-dot" style="background:#3dd68c"></div>
+        <div class="rec-url">memprobe.dev/app</div>
+      </div>
+
+      <!-- Exact header replica -->
+      <header style="position:relative;z-index:1">
+        <a class="logo" href="/" style="text-decoration:none;color:inherit;pointer-events:none">
+          <svg class="logo-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs><linearGradient id="demoNav" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5b9cf6"/><stop offset="100%" stop-color="#3dd68c"/></linearGradient></defs>
+            <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7" fill="var(--bg2)" stroke="url(#demoNav)" stroke-width="1.5"/>
+            <rect x="6" y="7"  width="20" height="5"  rx="1.4" fill="#5b9cf6"/>
+            <rect x="6" y="14" width="14" height="5"  rx="1.4" fill="#3dd68c"/>
+            <rect x="6" y="21" width="8"  height="5"  rx="1.4" fill="#f0a040"/>
+          </svg>
+          <div class="logo-wordmark"><span class="logo-name">memprobe</span></div>
+        </a>
+        <div class="header-right">
+          <nav>
+            <button class="nav-btn active">Analyze</button>
+            <button class="nav-btn" style="opacity:0.38;pointer-events:none;cursor:default">Compare</button>
+            <button class="nav-btn" style="opacity:0.38;pointer-events:none;cursor:default">Projects</button>
+            <button class="nav-btn" style="opacity:0.38;pointer-events:none;cursor:default">History</button>
+          </nav>
+          <button class="theme-btn" style="pointer-events:none">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+          </button>
+          <button class="user-btn" style="margin-left:4px;pointer-events:none">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span>John</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Exact results-wrap replica -->
+      <div class="results-wrap" style="padding-top:20px;padding-bottom:20px">
+
+        <!-- result-header (exact) -->
+        <div class="result-header">
+          <div>
+            <div class="result-title">Analysis</div>
+            <div class="result-file">firmware.elf</div>
+          </div>
+          <button class="btn-newfile" style="pointer-events:none">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>New file</span>
+          </button>
+        </div>
+
+        <!-- KPI row (exact structure from analyze.js line 72-75) -->
+        <div class="kpi-row">
+          <div class="kpi kpi-has-bar">
+            <div class="kpi-label">Flash</div>
+            <div class="kpi-val">893.7 KB</div>
+            <div class="kpi-sub">~194.7 KB OTA</div>
+            <div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-flash" style="width:87%;opacity:1"></div></div>
+          </div>
+          <div class="kpi kpi-has-bar">
+            <div class="kpi-label">RAM</div>
+            <div class="kpi-val">115.6 KB</div>
+            <div class="kpi-sub"></div>
+            <div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-ram" style="width:56%;opacity:1"></div></div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Sections</div>
+            <div class="kpi-val">156</div>
+            <div class="kpi-sub">4,013 symbols</div>
+          </div>
+          <div class="kpi warn">
+            <div class="kpi-label">Warnings</div>
+            <div class="kpi-val">5</div>
+          </div>
+        </div>
+
+        <!-- atab-bar (exact) — 5 tabs matching screenshot -->
+        <div class="atab-bar" id="demo-tabbar">
+          <button class="atab-btn active" onclick="demoCycleStop();demoTab(0)">Overview</button>
+          <button class="atab-btn" onclick="demoCycleStop();demoTab(1)">Treemap</button>
+          <button class="atab-btn" onclick="demoCycleStop();demoTab(2)">Symbols</button>
+          <button class="atab-btn" onclick="demoCycleStop();demoTab(3)" style="color:var(--amber)">Insights (5)</button>
+          <button class="atab-btn" onclick="demoCycleStop();demoTab(4)">Export &amp; share</button>
+        </div>
+
+        <!-- Tab 0: Overview — Binary info + Sections -->
+        <div class="atab-panel active demo-panel" id="demo-panel-0">
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Binary info</span></div>
+            <div class="binfo-grid">
+              <div class="binfo-item"><div class="binfo-label">Architecture</div><div class="binfo-val">Xtensa</div></div>
+              <div class="binfo-item"><div class="binfo-label">Chip family</div><div class="binfo-val">ESP32 (Xtensa LX6/LX7)</div></div>
+              <div class="binfo-item"><div class="binfo-label">Bitness</div><div class="binfo-val">32-bit</div></div>
+              <div class="binfo-item"><div class="binfo-label">ELF type</div><div class="binfo-val">Executable</div></div>
+              <div class="binfo-item"><div class="binfo-label">Endianness</div><div class="binfo-val">little-endian</div></div>
+              <div class="binfo-item"><div class="binfo-label">OS/ABI</div><div class="binfo-val">ELFOSABI_SYSV</div></div>
+              <div class="binfo-item"><div class="binfo-label">Entry point</div><div class="binfo-val">0x40377734</div></div>
+              <div class="binfo-item"><div class="binfo-label">ELF flags</div><div class="binfo-val">0x300</div></div>
+              <div class="binfo-item"><div class="binfo-label">Compiler</div><div class="binfo-val">GCC: (crosstool-NG esp-2021r2-patch5) 8.4.0</div></div>
+              <div class="binfo-item"><div class="binfo-label">OTA estimate</div><div class="binfo-val">~194.7 KB compressed (65% of 299.5 KB raw) · zlib</div></div>
+            </div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text3);margin-top:16px;margin-bottom:8px">Load segments (PT_LOAD)</div>
+            <table class="seg-table">
+              <thead><tr><th>VAddr</th><th>PAddr</th><th>File size</th><th>Mem size</th><th>Flags</th></tr></thead>
+              <tbody>
+                <tr><td>0x3c000020</td><td>0x3c000020</td><td>509.4 KB</td><td>509.4 KB</td><td style="font-weight:600;color:var(--text)">rw-</td></tr>
+                <tr><td>0x3fc88000</td><td>0x3fc88000</td><td>70.0 KB</td><td>169.8 KB</td><td style="font-weight:600;color:var(--text)">rw-</td></tr>
+                <tr><td>0x40374000</td><td>0x40374000</td><td>70.2 KB</td><td>70.2 KB</td><td style="font-weight:600;color:var(--text)">rwx</td></tr>
+                <tr><td>0x42000020</td><td>0x42000020</td><td>299.5 KB</td><td>299.5 KB</td><td style="font-weight:600;color:var(--text)">r-x</td></tr>
+                <tr><td>0x50000000</td><td>0x50000000</td><td>0 B</td><td>16 B</td><td style="font-weight:600;color:var(--text)">rw-</td></tr>
+              </tbody>
+            </table>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text3);margin-top:18px;margin-bottom:6px">Sections</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;padding:0 2px 6px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">
+              <span style="flex:1">Name</span>
+              <span style="width:180px;text-align:right">Size</span>
+              <span style="width:40px;text-align:right">%</span>
+            </div>
+            <!-- Section rows: name + color bar + size + % -->
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text)">.flash_rodata_dummy</div>
+                <div style="font-size:11px;color:var(--text3)">Read-only constant data.</div>
+              </div>
+              <div style="width:180px;display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div style="width:120px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="width:100%;height:100%;background:#3dd68c;border-radius:3px"></div></div>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text);width:52px;text-align:right">320.0 KB</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:40px;text-align:right">20.2%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text)">.flash.text</div>
+                <div style="font-size:11px;color:var(--text3)">Executable code stored in flash (ESP32)</div>
+              </div>
+              <div style="width:180px;display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div style="width:112px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="width:93%;height:100%;background:#5b9cf6;border-radius:3px"></div></div>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text);width:52px;text-align:right">299.5 KB</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:40px;text-align:right">18.9%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text)">.xt.prop</div>
+                <div style="font-size:11px;color:var(--text3)">Xtensa property table. Toolchain metadata.</div>
+              </div>
+              <div style="width:180px;display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div style="width:112px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="width:83%;height:100%;background:#888;border-radius:3px"></div></div>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text);width:52px;text-align:right">266.4 KB</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:40px;text-align:right">16.8%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text)">.flash.rodata</div>
+                <div style="font-size:11px;color:var(--text3)">Read-only data in flash (ESP32)</div>
+              </div>
+              <div style="width:180px;display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div style="width:112px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="width:59%;height:100%;background:#3dd68c;border-radius:3px"></div></div>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text);width:52px;text-align:right">189.1 KB</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:40px;text-align:right">11.9%</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid var(--border)">
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--mono);font-size:12px;color:var(--text)">.dram0.bss</div>
+                <div style="font-size:11px;color:var(--text3)">Uninitialized data in DRAM (ESP32)</div>
+              </div>
+              <div style="width:180px;display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                <div style="width:112px;height:5px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="width:31%;height:100%;background:#f06060;border-radius:3px"></div></div>
+                <span style="font-family:var(--mono);font-size:12px;color:var(--text);width:52px;text-align:right">99.8 KB</span>
+              </div>
+              <span style="font-family:var(--mono);font-size:11px;color:var(--text3);width:40px;text-align:right">6.3%</span>
+            </div>
+            <div style="padding:10px 2px 0">
+              <span style="font-size:12px;color:var(--accent);cursor:default">Show all 156 sections</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 1: Treemap — static SVG approximation -->
+        <div class="atab-panel demo-panel" id="demo-panel-1">
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Memory treemap</span></div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:8px">firmware</div>
+            <div style="position:relative;width:100%;aspect-ratio:16/7;border-radius:6px;overflow:hidden;background:var(--bg3)">
+              <!-- .flash_rodata 320 KB — top-left large green -->
+              <div style="position:absolute;left:0;top:0;width:34%;height:55%;background:#3dd68c;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:#000;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">.flash_rodata</div>
+                <div style="font-size:10px;color:#000;opacity:.7">320.0 KB</div>
+              </div>
+              <!-- .flash.text 290 KB — bottom-left large blue -->
+              <div style="position:absolute;left:0;top:55%;width:34%;height:45%;background:#5b9cf6;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:#000;opacity:.85">.flash.text</div>
+                <div style="font-size:10px;color:#000;opacity:.7">290.7 KB</div>
+              </div>
+              <!-- .xt.prop 266 KB — mid tall dark -->
+              <div style="position:absolute;left:34%;top:0;width:26%;height:72%;background:#4a4a60;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:var(--text2)">.xt.prop</div>
+                <div style="font-size:10px;color:var(--text3)">266.4 KB</div>
+              </div>
+              <!-- .dram0.bss 100 KB — mid bottom red -->
+              <div style="position:absolute;left:34%;top:72%;width:26%;height:28%;background:#c04040;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:#fff;opacity:.9">.dram0.bss</div>
+                <div style="font-size:10px;color:#fff;opacity:.7">100.3 KB</div>
+              </div>
+              <!-- .str 132 KB — top right area dark -->
+              <div style="position:absolute;left:60%;top:0;width:22%;height:55%;background:#3a3a52;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:var(--text2)">.str…</div>
+                <div style="font-size:10px;color:var(--text3)">132.2 KB</div>
+              </div>
+              <!-- .symtab 118 KB — mid right dark -->
+              <div style="position:absolute;left:60%;top:55%;width:22%;height:45%;background:#404050;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:var(--text2)">.symtab</div>
+                <div style="font-size:10px;color:var(--text3)">118.0 KB</div>
+              </div>
+              <!-- .fla 118 KB — far right top green -->
+              <div style="position:absolute;left:82%;top:0;width:18%;height:55%;background:#3dd68c;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:7px;overflow:hidden">
+                <div style="font-size:11px;font-weight:600;color:#000;opacity:.85">.fla…</div>
+                <div style="font-size:10px;color:#000;opacity:.7">118.3 KB</div>
+              </div>
+              <!-- .ira 59 KB — far right mid blue -->
+              <div style="position:absolute;left:82%;top:55%;width:9%;height:45%;background:#5b9cf6;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:4px;overflow:hidden">
+                <div style="font-size:9px;font-weight:600;color:#000;opacity:.85">.ira…</div>
+                <div style="font-size:9px;color:#000;opacity:.7">59.6 KB</div>
+              </div>
+              <!-- .dra 54 KB — far right bottom dark -->
+              <div style="position:absolute;left:91%;top:55%;width:9%;height:45%;background:#4a4a60;border:1px solid var(--bg);display:flex;flex-direction:column;justify-content:flex-start;padding:4px;overflow:hidden">
+                <div style="font-size:9px;font-weight:600;color:var(--text2)">.dra…</div>
+                <div style="font-size:9px;color:var(--text3)">54.2 KB</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Symbols (exact) -->
+        <div class="atab-panel demo-panel" id="demo-panel-2">
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Symbol table</span>
+              <span style="font-size:11px;color:var(--text3)">4,013 symbols</span>
+            </div>
+            <div class="tbl-controls">
+              <input class="tbl-search" placeholder="Search symbols or files…" disabled>
+              <select class="tbl-sel" disabled><option>All sections</option></select>
+              <select class="tbl-sel" disabled><option>All types</option></select>
+              <label class="tbl-toggle-label" style="pointer-events:none"><input type="checkbox" disabled> Demangle C++</label>
+            </div>
+            <div class="tbl-wrap">
+              <div class="tbl-scroll">
+                <table class="sym-tbl">
+                  <thead><tr>
+                    <th data-c="name">Name</th>
+                    <th data-c="size">Size</th>
+                    <th data-c="section">Section</th>
+                    <th data-c="source_location">Source</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td><span class="sym-name">_ZL17VL53L5CX_FIRMWARE</span></td><td class="sz-cell"><span class="sz-bar" style="width:20px;background:#3dd68c"></span>86,016</td><td><span class="badge" style="background:rgba(61,214,140,.15);color:#3dd68c">.flash.rodata</span></td><td><span class="src-file" style="color:var(--text3)">…/SparkFun_VL53L5CX_Arduino_Library/src</span></td></tr>
+                    <tr><td><span class="sym-name">farZonePx</span></td><td class="sz-cell"><span class="sz-bar" style="width:8px;background:#f06060"></span>32,768</td><td><span class="badge" style="background:rgba(240,96,96,.15);color:#f06060">.dram0.bss</span></td><td><span class="src-file">include/base/grid.h</span><span style="color:var(--text3)">:</span><span class="src-line">28</span></td></tr>
+                    <tr><td><span class="sym-name">_ZL4grid</span></td><td class="sz-cell"><span class="sz-bar" style="width:7px;background:#f06060"></span>29,280</td><td><span class="badge" style="background:rgba(240,96,96,.15);color:#f06060">.dram0.bss</span></td><td><span class="src-file">src/screens/map3d_screen.cpp</span><span style="color:var(--text3)">:</span><span class="src-line">32</span></td></tr>
+                    <tr><td><span class="sym-name">_ZL6s_path</span></td><td class="sz-cell"><span class="sz-bar" style="width:4px;background:#f06060"></span>18,000</td><td><span class="badge" style="background:rgba(240,96,96,.15);color:#f06060">.dram0.bss</span></td><td><span class="src-file">src/screens/tracker_screen.cpp</span><span style="color:var(--text3)">:</span><span class="src-line">15</span></td></tr>
+                    <tr><td><span class="sym-name">_vfprintf_r</span></td><td class="sz-cell"><span class="sz-bar" style="width:3px;background:#5b9cf6"></span>12,250</td><td><span class="badge" style="background:rgba(91,156,246,.15);color:#5b9cf6">.flash.text</span></td><td><span class="src-file" style="color:var(--text3)">…/libc/include/stdio.h</span><span style="color:var(--text3)">:</span><span class="src-line">503</span></td></tr>
+                    <tr><td><span class="sym-name">_svfprintf_r</span></td><td class="sz-cell"><span class="sz-bar" style="width:3px;background:#5b9cf6"></span>11,979</td><td><span class="badge" style="background:rgba(91,156,246,.15);color:#5b9cf6">.flash.text</span></td><td><span class="src-file" style="color:var(--text3)">…/libc/stdio/local.h</span><span style="color:var(--text3)">:</span><span class="src-line">154</span></td></tr>
+                    <tr><td><span class="sym-name">_vfiprintf_r</span></td><td class="sz-cell"><span class="sz-bar" style="width:2px;background:#5b9cf6"></span>8,354</td><td><span class="badge" style="background:rgba(91,156,246,.15);color:#5b9cf6">.flash.text</span></td><td><span class="src-file" style="color:var(--text3)">…/libc/include/stdio.h</span><span style="color:var(--text3)">:</span><span class="src-line">499</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="pager">
+                <span style="font-size:11px;color:var(--text3)">1–100 of 4,013</span>
+                <button disabled>&#x2039;</button>
+                <button>&#x203a;</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Insights -->
+        <div class="atab-panel demo-panel" id="demo-panel-3">
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Warnings</span></div>
+            <div class="warn-list">
+              <div class="warn-item warning">
+                <div class="wi-icon warning">!</div>
+                <div class="wi-body"><div class="wi-msg">C++ exceptions linked (__cxa_throw). Unwind tables add flash overhead.</div></div>
+              </div>
+              <div class="warn-item info">
+                <div class="wi-icon info">i</div>
+                <div class="wi-body"><div class="wi-msg">RTTI enabled: 5 typeinfo record(s), 56 bytes.</div></div>
+              </div>
+              <div class="warn-item info">
+                <div class="wi-icon info">i</div>
+                <div class="wi-body"><div class="wi-msg">assert() linked with file/line strings (__assert_func). Each call site embeds __FILE__, __func__, and the expression in flash.</div></div>
+              </div>
+              <div class="warn-item info">
+                <div class="wi-icon info">i</div>
+                <div class="wi-body"><div class="wi-msg">Stack canaries enabled (__stack_chk_fail). Each protected frame costs one extra stack word plus entry/exit checks.</div></div>
+              </div>
+              <div class="warn-item info">
+                <div class="wi-icon info">i</div>
+                <div class="wi-body"><div class="wi-msg">'_ZL17VL53L5CX_FIRMWARE' is 84.0 KB in .flash.rodata.</div></div>
+              </div>
+            </div>
+          </div>
+          <!-- Binary Insights (Pro) -->
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Binary Insights</span>
+              <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>
+            </div>
+            <div style="padding:4px 0 12px">
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--text3);margin-bottom:8px">Savings</div>
+              <div style="font-size:28px;font-weight:800;color:#3dd68c;letter-spacing:-.04em;line-height:1;margin-bottom:4px">881 B</div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:14px">recoverable flash</div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:7px;font-size:12px">
+                  <span style="font-size:10px;font-weight:700;background:rgba(91,156,246,.15);color:#5b9cf6;border-radius:4px;padding:2px 6px;letter-spacing:.04em;flex-shrink:0">INFO</span>
+                  <span style="color:var(--text2)"><span style="color:var(--text);font-weight:600">881 B</span> 9 symbol(s) in multiple translation units. Link with <span style="font-family:var(--mono)">-flto</span> or <span style="font-family:var(--mono)">--icf=safe</span> to deduplicate</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:7px;font-size:12px">
+                  <span style="font-size:10px;font-weight:700;background:rgba(91,156,246,.15);color:#5b9cf6;border-radius:4px;padding:2px 6px;letter-spacing:.04em;flex-shrink:0">INFO</span>
+                  <span style="color:var(--text2)">4.1 KB alignment padding between symbols</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg3);border-radius:7px;font-size:12px">
+                  <span style="font-size:10px;font-weight:700;background:rgba(240,160,64,.15);color:#f0a040;border-radius:4px;padding:2px 6px;letter-spacing:.04em;flex-shrink:0">WARN</span>
+                  <span style="color:var(--text2)">C++ exceptions linked. Build with <span style="font-family:var(--mono)">-fno-exceptions</span> to remove unwind tables</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- File Contributors -->
+          <div class="card">
+            <div class="card-hd"><span class="card-title">File contributors</span></div>
+            <div style="padding:4px 0 0">
+              <div style="display:grid;grid-template-columns:1fr 100px 60px;gap:0;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:0 2px 8px;border-bottom:1px solid var(--border)">
+                <span>Source file</span>
+                <span style="text-align:right">Flash</span>
+                <span style="text-align:right">RAM</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 100px 60px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--border);font-size:12px">
+                <span style="font-family:var(--mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">…/SparkFun_VL53L5CX_Arduino_Library/src/vl53l5cx_buff…</span>
+                <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end"><div style="width:40px;height:4px;background:#5b9cf6;border-radius:2px"></div><span style="font-family:var(--mono);color:var(--text)">85.7 KB</span></div>
+                <span style="font-family:var(--mono);color:var(--text3);text-align:right">—</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 100px 60px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--border);font-size:12px">
+                <span style="font-family:var(--mono);color:var(--text2)">lib/TFT_eSPI/TFT_eSPI.cpp</span>
+                <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end"><div style="width:7px;height:4px;background:#5b9cf6;border-radius:2px"></div><span style="font-family:var(--mono);color:var(--text)">10.2 KB</span></div>
+                <span style="font-family:var(--mono);color:var(--text3);text-align:right">—</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 100px 60px;align-items:center;padding:9px 2px;font-size:12px">
+                <span style="font-family:var(--mono);color:var(--text2)">src/managers/tab_manager.cpp</span>
+                <div style="display:flex;align-items:center;gap:5px;justify-content:flex-end"><div style="width:7px;height:4px;background:#5b9cf6;border-radius:2px"></div><span style="font-family:var(--mono);color:var(--text)">9.6 KB</span></div>
+                <span style="font-family:var(--mono);color:var(--text);text-align:right">1.2 KB</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Export & share (exact copy from ui.html) -->
+        <div class="atab-panel demo-panel" id="demo-panel-4">
+          <div class="card">
+            <div class="card-hd"><span class="card-title">Export analysis</span></div>
+            <div style="padding:20px">
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">What to include</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Binary info</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Memory regions</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Sections</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Symbols</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Warnings</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Insights</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" checked style="accent-color:var(--accent)"> Detected libraries</label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none"><input type="checkbox" style="accent-color:var(--accent)"> Treemap data</label>
+              </div>
+              <div style="font-size:12px;margin-bottom:22px">
+                <span style="color:var(--accent);font-size:12px">Select all</span>
+                <span style="color:var(--text3);margin:0 6px">·</span>
+                <span style="color:var(--accent);font-size:12px">Clear</span>
+              </div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Format</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none;font-weight:600"><input type="radio" name="demo-fmt" checked style="accent-color:var(--accent)"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span></label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none;font-weight:600"><input type="radio" name="demo-fmt" style="accent-color:var(--accent)"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span></label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none;font-weight:600"><input type="radio" name="demo-fmt" style="accent-color:var(--accent)"> CSV <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span></label>
+                <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);pointer-events:none;font-weight:600"><input type="radio" name="demo-fmt" style="accent-color:var(--accent)"> XML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.xml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span></label>
+              </div>
+              <button style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;pointer-events:none;box-shadow:0 2px 10px rgba(96,165,250,.25)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download export
+              </button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd">
+              <span class="card-title">Share a read-only link</span>
+              <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>
+            </div>
+            <div style="padding:20px">
+              <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">Generates a public URL that anyone can open. The link contains the same analysis you see here. No login required to view.</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <div style="flex:1;background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:9px 12px;font-family:var(--mono);font-size:12px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">memprobe.dev/share/aBcDeFgHiJ…</div>
+                <button style="display:inline-flex;align-items:center;gap:7px;padding:9px 16px;background:var(--bg3);color:var(--text2);border:1px solid var(--border2);border-radius:7px;font-size:13px;font-weight:600;pointer-events:none;white-space:nowrap">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy link
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /stats-window -->
+    </div><!-- /demo-wrap -->
+  </section>
+
+  <!-- How it works -->
+  <section class="how-section">
+    <div class="section-head">
+      <h2>Up and running in seconds.</h2>
+    </div>
+    <div class="how-grid">
+      <div class="how-step" data-reveal>
+        <div class="how-num">1</div>
+        <h3>Drop your file</h3>
+        <p>Drag in an ELF, AXF, or linker map file. No install, no CLI, no account required to try.</p>
+      </div>
+      <div class="how-step" data-reveal>
+        <div class="how-num">2</div>
+        <h3>Get instant analysis</h3>
+        <p>Section sizes, symbol tables, warnings, and a full treemap in under a second. Your file is never stored.</p>
+      </div>
+      <div class="how-step" data-reveal>
+        <div class="how-num">3</div>
+        <h3>Track over time</h3>
+        <p>Save builds to a project. Watch flash and RAM trend across commits. Catch regressions before they ship.</p>
       </div>
     </div>
   </section>
@@ -813,19 +1244,114 @@
     </div>
   </section>
 
-  <div style="text-align:center;padding:20px 24px 0;font-size:12px;color:var(--text3)">
-    memprobe is in free beta. Sign up now during beta to get <a href="/pricing" style="color:var(--accent);text-decoration:none">40% off Pro</a> for life.
-  </div>
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Find the bytes that don't belong.</h2>
+    <p>Drop in your ELF or linker map and get a full breakdown in seconds. Free during beta.</p>
+    {% if is_authenticated %}
+    <a class="btn-hero-primary" href="/app" style="display:inline-flex">
+      Open memprobe
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </a>
+    {% else %}
+    <a class="btn-hero-primary" href="/login" style="display:inline-flex">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Sign up free
+    </a>
+    <div class="cta-beta-note">Sign up during beta and get <a href="/pricing">40% off Pro</a> for life.</div>
+    {% endif %}
+  </section>
 
+  <!-- Footer -->
   <footer>
-    <span>memprobe v{{ version }}</span>
-    <span style="display:flex;gap:20px;align-items:center">
-      <a href="/pricing" style="color:var(--text3);font-size:13px;text-decoration:none">Pricing</a>
-      <a href="/privacy" style="color:var(--text3);font-size:13px;text-decoration:none">Privacy Policy</a>
-      <a href="/terms"   style="color:var(--text3);font-size:13px;text-decoration:none">Terms of Service</a>
-    </span>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a class="footer-logo" href="/">
+          <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+            <defs><linearGradient id="footerStroke" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5b9cf6"/><stop offset="100%" stop-color="#3dd68c"/></linearGradient></defs>
+            <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7" fill="var(--bg2)" stroke="url(#footerStroke)" stroke-width="1.5"/>
+            <rect x="6" y="7"  width="20" height="5"  rx="1.4" fill="#5b9cf6"/>
+            <rect x="6" y="14" width="14" height="5"  rx="1.4" fill="#3dd68c"/>
+            <rect x="6" y="21" width="8"  height="5"  rx="1.4" fill="#f0a040"/>
+          </svg>
+          <span class="footer-logo-name">memprobe</span>
+        </a>
+        <div class="footer-tagline">Firmware memory analysis for embedded engineers. See where every byte goes.</div>
+        <div class="footer-copy">memprobe 2026</div>
+      </div>
+
+      <div class="footer-col">
+        <h4>Product</h4>
+        <a href="/app">Try memprobe</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/#features">Features</a>
+        <a href="/#recordings">See it in action</a>
+      </div>
+
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="mailto:support@memprobe.dev">Contact</a>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>memprobe v{{ version }} · free beta</span>
+      <span>Built for firmware engineers.</span>
+    </div>
   </footer>
 
+  <!-- Scroll to top -->
+  <button class="scroll-top" id="scroll-top-btn" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+  </button>
+
   <script src="/static/scripts/landing.js?v={{ asset_version }}"></script>
+  <script>
+    // Demo tab cycling
+    const DEMO_TABS = 5;
+    const DEMO_INTERVAL = 2000;
+    let _demoCurrent = 0;
+    let _demoCycleTimer = null;
+
+    function demoTab(idx) {
+      _demoCurrent = idx;
+      document.querySelectorAll('#demo-tabbar .atab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === idx);
+      });
+      document.querySelectorAll('.demo-panel').forEach((panel, i) => {
+        panel.classList.toggle('active', i === idx);
+      });
+    }
+
+    function demoCycleStop() {
+      clearInterval(_demoCycleTimer);
+      _demoCycleTimer = null;
+    }
+
+    function demoCycleStart() {
+      if (_demoCycleTimer) return;
+      _demoCycleTimer = setInterval(() => {
+        demoTab((_demoCurrent + 1) % DEMO_TABS);
+      }, DEMO_INTERVAL);
+    }
+
+    // Start cycling when demo window scrolls into view
+    const demoObserver = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) demoCycleStart();
+        else demoCycleStop();
+      });
+    }, { threshold: 0.3 });
+    const demoEl = document.getElementById('recordings');
+    if (demoEl) demoObserver.observe(demoEl);
+
+    // Scroll-to-top visibility
+    const scrollBtn = document.getElementById('scroll-top-btn');
+    window.addEventListener('scroll', () => {
+      scrollBtn.classList.toggle('visible', window.scrollY > 400);
+    }, { passive: true });
+  </script>
 </body>
 </html>

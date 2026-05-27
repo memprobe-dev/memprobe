@@ -257,6 +257,15 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 FILE_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024 * 1024
 
+# ── Beta period ───────────────────────────────────────────────────────────────
+# Users who sign up on or before this date are flagged as beta users.
+# is_beta_user is set once at signup and never changed — it records eligibility
+# (e.g. a lifetime discount) not the current plan.
+# Update this date when the beta period officially closes.
+
+from datetime import date as _date
+BETA_END_DATE = _date(2026, 12, 31)
+
 # ── Misc ──────────────────────────────────────────────────────────────────────
 
 LANGUAGE_CODE = 'en-us'

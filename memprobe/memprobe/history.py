@@ -1,15 +1,29 @@
 """Build history — PostgreSQL.
 
-Security invariant: every function that reads or writes user-owned build data
-requires a ``user_id`` argument and filters ALL queries by it.  A user can
-never read or mutate another user's builds, even if they know the build ID.
+Security model
+--------------
+1. Application layer: every function that reads or writes user-owned data
+   requires a ``user_id`` argument and filters ALL queries by it.
 
-Share records are keyed by an opaque random ID and are intentionally public
-(that is the point of sharing).  They carry no user_id.
+2. Database layer: PostgreSQL Row Level Security (RLS) is enabled on
+   ``builds``, ``project_settings``, and ``user_profiles``.  Every
+   transaction sets ``app.current_user_id`` via ``set_config(..., TRUE)``
+   (transaction-local, safe with connection pools).  The RLS policy then
+   enforces ``user_id = current_setting('app.current_user_id', TRUE)``
+   at the storage engine level, so even a future application bug that
+   forgets to pass user_id would return zero rows instead of leaking data.
+
+   Shares are intentionally public (no RLS) — the random share ID is the
+   only access control, which is the point.
+
+3. Indexes: all user-scoped tables have a leading ``user_id`` column in
+   every index so queries never require a sequential scan.
 
 Requires DATABASE_URL environment variable:
     DATABASE_URL=postgres://user:pass@host:5432/dbname
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -52,11 +66,25 @@ def _get_pool():
 
 
 @contextmanager
-def _db():
-    """Yield a connection, auto-commit on success, rollback on error."""
+def _db(user_id: Optional[str] = None):
+    """Yield a connection, auto-commit on success, rollback on error.
+
+    If ``user_id`` is provided, it is set as a transaction-local GUC
+    (``app.current_user_id``) so that PostgreSQL RLS policies can enforce
+    row-level isolation at the storage layer.  ``TRUE`` as the third arg
+    to ``set_config`` means the setting is local to the transaction and
+    resets automatically when it commits or rolls back — safe for pooled
+    connections.
+    """
     pool = _get_pool()
     conn = pool.getconn()
     try:
+        if user_id is not None:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT set_config('app.current_user_id', %s, TRUE)",
+                (str(user_id),),
+            )
         yield conn
         conn.commit()
     except Exception:
@@ -104,6 +132,28 @@ def _detect_git(file_path: str) -> tuple:
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 _SCHEMA = """
+-- ── User profiles ──────────────────────────────────────────────────────────
+-- One row per registered user. Created automatically on first login via
+-- Django signals. Tracks plan tier and whether the user signed up during
+-- the beta period (eligible for beta-specific pricing / features).
+--
+-- Valid plan values: free | pro | pro_plus | canceled
+-- is_beta_user is set at signup time and never changed; it marks eligibility,
+-- not the current plan.
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id      TEXT         PRIMARY KEY,
+    plan         VARCHAR(20)  NOT NULL DEFAULT 'free',
+    plan_since   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    is_beta_user BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT user_profiles_plan_check
+        CHECK (plan IN ('free', 'pro', 'pro_plus', 'canceled'))
+);
+
+-- ── Builds ─────────────────────────────────────────────────────────────────
+
 CREATE TABLE IF NOT EXISTS builds (
     id            SERIAL PRIMARY KEY,
     user_id       TEXT         NOT NULL,
@@ -119,9 +169,15 @@ CREATE TABLE IF NOT EXISTS builds (
     analysis_json TEXT
 );
 
+-- Leading user_id on all indexes so every scoped query is an index scan.
 CREATE INDEX IF NOT EXISTS builds_user_id_idx      ON builds (user_id);
 CREATE INDEX IF NOT EXISTS builds_user_project_idx ON builds (user_id, project)
     WHERE project IS NOT NULL;
+CREATE INDEX IF NOT EXISTS builds_user_ts_idx      ON builds (user_id, timestamp DESC);
+
+-- ── Shares ─────────────────────────────────────────────────────────────────
+-- Intentionally public: the opaque random ID is the access control.
+-- No RLS on this table.
 
 CREATE TABLE IF NOT EXISTS shares (
     id            TEXT PRIMARY KEY,
@@ -130,6 +186,8 @@ CREATE TABLE IF NOT EXISTS shares (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     analysis_json TEXT        NOT NULL
 );
+
+-- ── Project settings ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS project_settings (
     user_id            TEXT         NOT NULL,
@@ -143,11 +201,133 @@ CREATE TABLE IF NOT EXISTS project_settings (
 );
 """
 
+# RLS is applied separately because it requires ALTER TABLE and CREATE POLICY,
+# which need the table to already exist and the DB user to be the table owner.
+# init_db() calls _apply_rls() after the schema is created; failures are
+# logged but not fatal so a misconfigured Postgres (e.g. limited-privilege
+# user) doesn't break startup — the application-layer user_id checks remain.
+_RLS_SQL = """
+-- Enable RLS on user-scoped tables.
+ALTER TABLE user_profiles   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE builds          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_settings ENABLE ROW LEVEL SECURITY;
+
+-- Policies: every operation must be on the calling user's own rows.
+-- current_setting('app.current_user_id', TRUE) returns NULL (not error)
+-- when the GUC is unset, causing the comparison to fail safely.
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'user_profiles' AND policyname = 'user_profiles_isolation'
+    ) THEN
+        CREATE POLICY user_profiles_isolation ON user_profiles
+            USING (user_id = current_setting('app.current_user_id', TRUE));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'builds' AND policyname = 'builds_isolation'
+    ) THEN
+        CREATE POLICY builds_isolation ON builds
+            USING (user_id = current_setting('app.current_user_id', TRUE));
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = 'project_settings' AND policyname = 'project_settings_isolation'
+    ) THEN
+        CREATE POLICY project_settings_isolation ON project_settings
+            USING (user_id = current_setting('app.current_user_id', TRUE));
+    END IF;
+END $$;
+"""
+
+
+def _apply_rls() -> None:
+    """Enable RLS policies on user-scoped tables. Safe to call repeatedly."""
+    import logging
+    log = logging.getLogger(__name__)
+    try:
+        with _db() as conn:
+            _exec(conn, _RLS_SQL)
+        log.info('history: RLS policies applied successfully')
+    except Exception as exc:
+        # Non-fatal: log and continue. App-layer user_id guards still apply.
+        log.warning(
+            'history: could not apply RLS policies (non-fatal, app-layer guards active): %s',
+            exc,
+        )
+
 
 def init_db() -> None:
-    """Create tables and indexes if they don't exist. Safe to call on every startup."""
+    """Create tables, indexes, and RLS policies. Safe to call on every startup."""
     with _db() as conn:
         _exec(conn, _SCHEMA)
+    _apply_rls()
+
+
+# ── User profile functions ────────────────────────────────────────────────────
+
+def create_profile(user_id: str, is_beta_user: bool = False) -> dict:
+    """Create a user profile row if one doesn't exist. Idempotent.
+
+    Call this from a Django signal on User post_save so every new account
+    gets a profile immediately. ``is_beta_user`` should be set based on
+    whether the signup date falls within the beta window (see signals.py).
+    """
+    if not user_id:
+        raise ValueError('user_id required')
+    now = datetime.now(timezone.utc)
+    with _db(user_id=user_id) as conn:
+        _exec(conn,
+            """INSERT INTO user_profiles (user_id, plan, plan_since, is_beta_user, created_at, updated_at)
+               VALUES (%s, 'free', %s, %s, %s, %s)
+               ON CONFLICT (user_id) DO NOTHING""",
+            (user_id, now, is_beta_user, now, now),
+        )
+        return _fetchone(conn,
+            "SELECT * FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        ) or {}
+
+
+def get_profile(user_id: str) -> Optional[dict]:
+    """Return the profile row for user_id, or None if it doesn't exist."""
+    if not user_id:
+        return None
+    with _db(user_id=user_id) as conn:
+        return _fetchone(conn,
+            "SELECT * FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        )
+
+
+def update_plan(user_id: str, plan: str) -> dict:
+    """Update a user's plan. ``plan`` must be one of the allowed values.
+
+    Valid plans: free | pro | pro_plus | canceled
+    """
+    allowed = {'free', 'pro', 'pro_plus', 'canceled'}
+    if plan not in allowed:
+        raise ValueError(f'Invalid plan {plan!r}. Must be one of: {allowed}')
+    if not user_id:
+        raise ValueError('user_id required')
+    now = datetime.now(timezone.utc)
+    with _db(user_id=user_id) as conn:
+        _exec(conn,
+            """UPDATE user_profiles
+               SET plan = %s, plan_since = %s, updated_at = %s
+               WHERE user_id = %s""",
+            (plan, now, now, user_id),
+        )
+        return _fetchone(conn,
+            "SELECT * FROM user_profiles WHERE user_id = %s",
+            (user_id,),
+        ) or {}
 
 
 # ── Per-user build functions ──────────────────────────────────────────────────
@@ -161,7 +341,7 @@ def save(
     """Persist a MemoryMap to the history database. Returns the new build id."""
     git_hash, git_branch = _detect_git(mmap.source_file)
     ts = mmap.timestamp or datetime.now(timezone.utc)
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         cur = _exec(conn,
             """INSERT INTO builds
                (user_id, source_file, timestamp, git_hash, git_branch,
@@ -187,7 +367,7 @@ def save(
 
 def get_build(build_id: int, user_id: str) -> Optional[dict]:
     """Return a build by ID only if it belongs to user_id."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         row = _fetchone(conn,
             "SELECT * FROM builds WHERE id = %s AND user_id = %s",
             (build_id, user_id),
@@ -201,7 +381,7 @@ def get_build(build_id: int, user_id: str) -> Optional[dict]:
 
 def list_builds(user_id: str) -> list:
     """Return all builds for user_id, newest first."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         return _fetchall(conn,
             "SELECT * FROM builds WHERE user_id = %s ORDER BY timestamp DESC",
             (user_id,),
@@ -210,7 +390,7 @@ def list_builds(user_id: str) -> list:
 
 def delete_build(build_id: int, user_id: str) -> bool:
     """Delete a build. Returns True if a row was deleted."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         cur = _exec(conn,
             "DELETE FROM builds WHERE id = %s AND user_id = %s",
             (build_id, user_id),
@@ -220,13 +400,13 @@ def delete_build(build_id: int, user_id: str) -> bool:
 
 def clear(user_id: str) -> None:
     """Delete all builds belonging to user_id."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         _exec(conn, "DELETE FROM builds WHERE user_id = %s", (user_id,))
 
 
 def list_projects(user_id: str) -> list:
     """Return all distinct project names for user_id (including empty ones), alphabetically."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         rows = _fetchall(conn,
             """SELECT project FROM (
                    SELECT DISTINCT project FROM builds
@@ -243,9 +423,7 @@ def list_projects(user_id: str) -> list:
 
 def list_project_summaries(user_id: str) -> list:
     """Return one summary row per project (including empty ones), most-recently-active first."""
-    with _db() as conn:
-        # Union builds-based projects with settings-only projects so newly
-        # created empty projects appear in the picker immediately.
+    with _db(user_id=user_id) as conn:
         projects = _fetchall(conn,
             """SELECT
                    COALESCE(b.project, ps.project) AS project,
@@ -263,9 +441,12 @@ def list_project_summaries(user_id: str) -> list:
 
         result = []
         for p in projects:
+            # Always scope by user_id even though latest_id came from the
+            # user-scoped query above. Belt-and-braces: never fetch a build
+            # row without the user_id guard.
             latest = (_fetchone(conn,
-                "SELECT total_flash, total_ram, source_file FROM builds WHERE id = %s",
-                (p['latest_id'],),
+                "SELECT total_flash, total_ram, source_file FROM builds WHERE id = %s AND user_id = %s",
+                (p['latest_id'], user_id),
             ) or {}) if p['latest_id'] else {}
             prev = (_fetchone(conn,
                 """SELECT total_flash, total_ram FROM builds
@@ -294,7 +475,7 @@ def get_trend(
     limit: int = 200,
 ) -> list:
     """Return time-series data for user_id ordered ascending."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         if project:
             rows = _fetchall(conn,
                 """SELECT id, source_file, timestamp, git_hash, git_branch,
@@ -330,7 +511,7 @@ def get_trend(
 # ── Project settings ──────────────────────────────────────────────────────────
 
 def get_project_settings(user_id: str, project: str) -> Optional[dict]:
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         return _fetchone(conn,
             """SELECT project, flash_budget_bytes, ram_budget_bytes,
                       description, created_at, updated_at
@@ -352,7 +533,7 @@ def save_project_settings(
     if not project:
         raise ValueError('project name required.')
     now = datetime.now(timezone.utc)
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         _exec(conn,
             """INSERT INTO project_settings
                (user_id, project, flash_budget_bytes, ram_budget_bytes,
@@ -375,7 +556,7 @@ def delete_project(user_id: str, project: str) -> dict:
         raise ValueError('user_id required.')
     if not project:
         raise ValueError('project name required.')
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         cur = _exec(conn,
             'DELETE FROM builds WHERE user_id = %s AND project = %s',
             (user_id, project),
@@ -391,7 +572,7 @@ def delete_project(user_id: str, project: str) -> dict:
 
 def list_projects_full(user_id: str) -> list:
     """Return rich per-project data: stats + saved settings."""
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         proj_rows = _fetchall(conn,
             """SELECT project, COUNT(*) AS build_count,
                       MIN(timestamp) AS first_build, MAX(timestamp) AS last_build
@@ -459,6 +640,7 @@ def list_projects_full(user_id: str) -> list:
 
 
 # ── Shares ────────────────────────────────────────────────────────────────────
+# No RLS on shares — the opaque random ID is the access control.
 
 def save_share(
     share_id: str,
@@ -501,15 +683,20 @@ def delete_all_for_user(user_id: str) -> dict:
     """Permanently delete all data belonging to user_id."""
     if not user_id or user_id == '__anonymous__':
         raise ValueError('Refusing to delete anonymous/missing user_id.')
-    with _db() as conn:
+    with _db(user_id=user_id) as conn:
         cur = _exec(conn, 'DELETE FROM builds WHERE user_id = %s', (user_id,))
         builds = cur.rowcount
-        cur = _exec(conn, 'DELETE FROM shares WHERE user_id = %s', (user_id,))
-        shares = cur.rowcount
         cur = _exec(conn, 'DELETE FROM project_settings WHERE user_id = %s', (user_id,))
         settings = cur.rowcount
+        cur = _exec(conn, 'DELETE FROM user_profiles WHERE user_id = %s', (user_id,))
+        profiles = cur.rowcount
+    # Shares deletion does not need user_id RLS — filter by column directly.
+    with _db() as conn:
+        cur = _exec(conn, 'DELETE FROM shares WHERE user_id = %s', (user_id,))
+        shares = cur.rowcount
     return {
         'builds_deleted':           builds,
         'shares_deleted':           shares,
         'project_settings_deleted': settings,
+        'profiles_deleted':         profiles,
     }

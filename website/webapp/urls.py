@@ -4,6 +4,10 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # Crawler / SEO
+    path('sitemap.xml',                       views.sitemap,              name='sitemap'),
+    path('robots.txt',                        views.robots,               name='robots'),
+
     # Public pages
     path('',                                  views.landing,              name='landing'),
     path('login',                             views.login_view,           name='login'),

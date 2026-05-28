@@ -354,6 +354,39 @@ def landing(request):
     return resp
 
 
+def sitemap(request):
+    pages = [
+        ('https://memprobe.dev/', '1.0', 'weekly'),
+        ('https://memprobe.dev/docs', '0.9', 'monthly'),
+        ('https://memprobe.dev/pricing', '0.7', 'monthly'),
+        ('https://memprobe.dev/privacy', '0.3', 'yearly'),
+        ('https://memprobe.dev/terms', '0.3', 'yearly'),
+    ]
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for loc, priority, freq in pages:
+        lines.append(
+            f'  <url><loc>{loc}</loc>'
+            f'<changefreq>{freq}</changefreq>'
+            f'<priority>{priority}</priority></url>'
+        )
+    lines.append('</urlset>')
+    return HttpResponse('\n'.join(lines), content_type='application/xml')
+
+
+def robots(request):
+    content = (
+        'User-agent: *\n'
+        'Allow: /\n'
+        'Disallow: /api/\n'
+        'Disallow: /app\n'
+        'Disallow: /account/\n'
+        '\n'
+        'Sitemap: https://memprobe.dev/sitemap.xml\n'
+    )
+    return HttpResponse(content, content_type='text/plain')
+
+
 def privacy(request):
     return render(request, 'privacy.html')
 

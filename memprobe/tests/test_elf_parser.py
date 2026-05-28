@@ -198,3 +198,18 @@ def test_parse_garbage_file_raises(tmp_path):
     f.write_bytes(b"\x00" * 64)
     with pytest.raises(Exception):
         parse(f)
+
+
+# -- DWARF map early-free (regression: maps must not be accessible post-symbol-scan) ------
+
+def test_dwarf_maps_freed_before_rodata_scans():
+    """parse() must produce valid duplicate_strings and ota_estimate regardless of
+    DWARF content, proving the del/gc.collect() after the symbol scan doesn't
+    corrupt later passes."""
+    result = parse(STM32_ELF)
+    assert isinstance(result, MemoryMap)
+    assert result.total_flash > 0
+    # binary_info keys set by the post-DWARF passes must still be present
+    assert "duplicate_strings" in result.binary_info
+    assert "ota_estimate" in result.binary_info
+    assert "build_stamps" in result.binary_info

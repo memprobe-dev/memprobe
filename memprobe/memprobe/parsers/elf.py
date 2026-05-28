@@ -1,6 +1,7 @@
 """ELF binary parser using pyelftools."""
 
 import bisect
+import gc
 import re
 import zlib
 from pathlib import Path
@@ -109,6 +110,7 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
        not the line program - so it never crosses section boundaries)
     3. (sorted_addrs, sorted_locs): line-program address map used as last-
        resort fallback only for code symbols with no DIE match.
+
     """
     if not elf.has_dwarf_info():
         return {}, {}, [], []
@@ -423,6 +425,11 @@ def parse(elf_file: Path) -> MemoryMap:
                                 source_location=_lookup_source(sym.name, lookup_addr, dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs),
                             )
                         )
+
+        # Free DWARF maps immediately after the symbol scan - they can be large
+        # and are no longer needed before the .rodata and OTA passes below.
+        del dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs
+        gc.collect()
 
         # Collect sections
         sections: list[Section] = []

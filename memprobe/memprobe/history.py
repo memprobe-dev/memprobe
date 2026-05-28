@@ -206,7 +206,7 @@ _MIGRATIONS_SQL = """
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'builds' AND column_name = 'active'
+        WHERE table_schema = 'public' AND table_name = 'builds' AND column_name = 'active'
     ) THEN
         ALTER TABLE builds ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE;
     END IF;
@@ -215,7 +215,7 @@ END $$;
 DO $$ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'builds' AND column_name = 'sort_order'
+        WHERE table_schema = 'public' AND table_name = 'builds' AND column_name = 'sort_order'
     ) THEN
         ALTER TABLE builds ADD COLUMN sort_order INTEGER;
         -- backfill: assign sort_order based on timestamp within each project
@@ -299,9 +299,14 @@ def _apply_rls() -> None:
 
 def init_db() -> None:
     """Create tables, indexes, and RLS policies. Safe to call on every startup."""
+    import logging
+    log = logging.getLogger(__name__)
     with _db() as conn:
         _exec(conn, _SCHEMA)
-        _exec(conn, _MIGRATIONS_SQL)
+        try:
+            _exec(conn, _MIGRATIONS_SQL)
+        except Exception as exc:
+            log.warning('history: incremental migrations failed (non-fatal): %s', exc)
     _apply_rls()
 
 
@@ -378,14 +383,17 @@ def save(
     ts = mmap.timestamp or datetime.now(timezone.utc)
     proj = project.strip() if project and project.strip() else None
     with _db(user_id=user_id) as conn:
-        # Compute next sort_order for this project (NULL projects get NULL sort_order)
+        # Compute next sort_order for this project (NULL projects get NULL sort_order).
+        # Use COUNT(*) as the base so pre-migration rows with null sort_order are
+        # counted correctly — MAX(sort_order) returns NULL when all values are null,
+        # which would make every new build get sort_order=1.
         if proj:
             row = _fetchone(conn,
-                """SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+                """SELECT GREATEST(COALESCE(MAX(sort_order), 0), COUNT(*)) + 1 AS next_order
                    FROM builds WHERE user_id = %s AND project = %s""",
                 (user_id, proj),
             )
-            next_order = row['next_order'] if row else 1
+            next_order = int(row['next_order']) if row and row['next_order'] is not None else 1
         else:
             next_order = None
         cur = _exec(conn,
@@ -524,19 +532,16 @@ def list_project_summaries(user_id: str) -> list:
 
         result = []
         for p in projects:
-            # Always scope by user_id even though latest_id came from the
-            # user-scoped query above. Belt-and-braces: never fetch a build
-            # row without the user_id guard.
-            latest = (_fetchone(conn,
-                "SELECT total_flash, total_ram, source_file FROM builds WHERE id = %s AND user_id = %s",
-                (p['latest_id'], user_id),
-            ) or {}) if p['latest_id'] else {}
-            prev = (_fetchone(conn,
-                """SELECT total_flash, total_ram FROM builds
-                   WHERE project = %s AND user_id = %s AND id < %s
-                   ORDER BY id DESC LIMIT 1""",
-                (p['project'], user_id, p['latest_id']),
-            )) if p['latest_id'] else None
+            # Fetch the two most recent builds in chart order (sort_order DESC,
+            # then timestamp DESC) so the delta reflects what the trend chart shows.
+            two = _fetchall(conn,
+                """SELECT total_flash, total_ram, source_file FROM builds
+                   WHERE user_id = %s AND project = %s
+                   ORDER BY COALESCE(sort_order, 0) DESC, timestamp DESC LIMIT 2""",
+                (user_id, p['project']),
+            ) if p['build_count'] else []
+            latest = two[0] if two else {}
+            prev   = two[1] if len(two) > 1 else None
             lb = p['last_build']
             result.append({
                 'project':     p['project'],
@@ -568,13 +573,15 @@ def get_trend(
                 (user_id, project, limit),
             )
         elif source_file:
+            # Escape LIKE metacharacters in the filename to prevent wildcard injection.
+            safe_name = Path(source_file).name.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
             rows = _fetchall(conn,
                 """SELECT id, source_file, timestamp, git_hash, git_branch,
                           total_flash, total_ram, project, active, sort_order
-                   FROM builds WHERE user_id = %s AND source_file LIKE %s
+                   FROM builds WHERE user_id = %s AND source_file LIKE %s ESCAPE '\\'
                                      AND project IS NOT NULL
                    ORDER BY COALESCE(sort_order, 0) ASC, timestamp ASC LIMIT %s""",
-                (user_id, f'%{Path(source_file).name}%', limit),
+                (user_id, f'%{safe_name}%', limit),
             )
         else:
             rows = _fetchall(conn,
@@ -607,33 +614,65 @@ def get_project_settings(user_id: str, project: str) -> Optional[dict]:
         )
 
 
+_UNSET = object()  # sentinel distinguishing "not provided" from explicit None
+
+
 def save_project_settings(
     user_id: str,
     project: str,
-    flash_budget_bytes: Optional[int] = None,
-    ram_budget_bytes: Optional[int] = None,
-    description: Optional[str] = None,
+    flash_budget_bytes=_UNSET,
+    ram_budget_bytes=_UNSET,
+    description=_UNSET,
 ) -> dict:
-    """Upsert settings for a project."""
+    """Upsert settings for a project.
+
+    Pass ``None`` to explicitly clear a field (e.g. remove a budget).
+    Omit a parameter (or pass the sentinel) to leave the existing value unchanged.
+    """
     if not user_id or user_id == '__anonymous__':
         raise ValueError('user_id required.')
     if not project:
         raise ValueError('project name required.')
     now = datetime.now(timezone.utc)
+
     with _db(user_id=user_id) as conn:
-        _exec(conn,
-            """INSERT INTO project_settings
-               (user_id, project, flash_budget_bytes, ram_budget_bytes,
-                description, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (user_id, project) DO UPDATE SET
-                   flash_budget_bytes = COALESCE(EXCLUDED.flash_budget_bytes, project_settings.flash_budget_bytes),
-                   ram_budget_bytes   = COALESCE(EXCLUDED.ram_budget_bytes,   project_settings.ram_budget_bytes),
-                   description        = COALESCE(EXCLUDED.description,        project_settings.description),
-                   updated_at         = EXCLUDED.updated_at""",
-            (user_id, project, flash_budget_bytes, ram_budget_bytes,
-             description, now, now),
+        # INSERT … ON CONFLICT is the simplest path for a new row.
+        # For updates, build the SET clause dynamically so we only touch the
+        # fields the caller explicitly provided (including explicit None clears).
+        existing = _fetchone(conn,
+            "SELECT flash_budget_bytes, ram_budget_bytes, description, created_at "
+            "FROM project_settings WHERE user_id = %s AND project = %s",
+            (user_id, project),
         )
+
+        if existing is None:
+            # New row: treat unset sentinels as NULL
+            fb = None if flash_budget_bytes is _UNSET else flash_budget_bytes
+            rb = None if ram_budget_bytes   is _UNSET else ram_budget_bytes
+            desc = None if description      is _UNSET else description
+            _exec(conn,
+                """INSERT INTO project_settings
+                   (user_id, project, flash_budget_bytes, ram_budget_bytes,
+                    description, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (user_id, project, fb, rb, desc, now, now),
+            )
+        else:
+            # Update: only touch fields the caller explicitly provided.
+            sets, vals = [], []
+            if flash_budget_bytes is not _UNSET:
+                sets.append("flash_budget_bytes = %s"); vals.append(flash_budget_bytes)
+            if ram_budget_bytes is not _UNSET:
+                sets.append("ram_budget_bytes = %s"); vals.append(ram_budget_bytes)
+            if description is not _UNSET:
+                sets.append("description = %s"); vals.append(description)
+            sets.append("updated_at = %s"); vals.append(now)
+            vals.extend([user_id, project])
+            _exec(conn,
+                f"UPDATE project_settings SET {', '.join(sets)} WHERE user_id = %s AND project = %s",
+                vals,
+            )
+
     return get_project_settings(user_id, project) or {}
 
 
@@ -688,7 +727,7 @@ def list_projects_full(user_id: str) -> list:
             two_builds = _fetchall(conn,
                 """SELECT total_flash, total_ram FROM builds
                    WHERE user_id = %s AND project = %s
-                   ORDER BY timestamp DESC LIMIT 2""",
+                   ORDER BY COALESCE(sort_order, 0) DESC, timestamp DESC LIMIT 2""",
                 (user_id, name),
             )
             latest = two_builds[0] if two_builds else None

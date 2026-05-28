@@ -63,7 +63,10 @@ function secDesc(name) {
 
 function fmtB(n) { if(!n)return'0 B'; if(n>=1048576)return(n/1048576).toFixed(2)+' MB'; if(n>=1024)return(n/1024).toFixed(1)+' KB'; return n+' B'; }
 function fmtBH(n) { if(!n)return'0 B'; if(n>=1048576)return(n/1048576).toFixed(1)+' MB'; if(n>=1024)return(n/1024).toFixed(1)+' KB'; return n+' B'; }
-function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// escAttr: like esc() but also safe for use inside single-quoted HTML attributes.
+// Use this (not esc) when embedding user data inside onclick='...' or similar.
+function escAttr(s) { return esc(s); }  // esc now covers both cases
 function fmtSrc(loc) {
   if (!loc) return '<span style="color:var(--text3)">-</span>';
   const ci = loc.lastIndexOf(':');

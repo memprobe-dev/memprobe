@@ -253,8 +253,9 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # ── File uploads ──────────────────────────────────────────────────────────────
-
-FILE_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024 * 1024
+# Always write uploads to a TemporaryUploadedFile on disk rather than
+# buffering them in RAM. This keeps large ELF/map files out of the Python heap.
+FILE_UPLOAD_MAX_MEMORY_SIZE = 0
 DATA_UPLOAD_MAX_MEMORY_SIZE = 256 * 1024 * 1024
 
 # ── Beta period ───────────────────────────────────────────────────────────────

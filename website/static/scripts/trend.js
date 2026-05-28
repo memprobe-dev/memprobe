@@ -115,9 +115,9 @@ function _renderProjectCard(p) {
       </div>
 
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-        <button class="btn-sm" onclick='_goToAddBuild(${JSON.stringify(p.project)})' style="border-color:rgba(91,156,246,.5);color:#5b9cf6">+ Add build</button>
-        <button class="btn-sm" onclick='_openProjectEditor(${JSON.stringify(p.project)})'>Edit</button>
-        <button class="btn-sm" onclick='_confirmDeleteProject(${JSON.stringify(p.project)})' style="border-color:rgba(244,114,114,.4);color:#f47272">Delete</button>
+        <button class="btn-sm" onclick='_goToAddBuild(${esc(JSON.stringify(p.project))})' style="border-color:rgba(91,156,246,.5);color:#5b9cf6">+ Add build</button>
+        <button class="btn-sm" onclick='_openProjectEditor(${esc(JSON.stringify(p.project))})'>Edit</button>
+        <button class="btn-sm" onclick='_confirmDeleteProject(${esc(JSON.stringify(p.project))})' style="border-color:rgba(244,114,114,.4);color:#f47272">Delete</button>
       </div>
     </div>
 
@@ -195,8 +195,8 @@ function _renderProjectEditor(p) {
     </div>
 
     <div style="display:flex;gap:8px;margin-top:16px">
-      <button class="btn-primary" onclick='_saveProjectSettings(${JSON.stringify(p.project)})' style="padding:10px 18px;font-size:13px">Save changes</button>
-      <button class="btn-sm" onclick='_closeProjectEditor(${JSON.stringify(p.project)})'>Cancel</button>
+      <button class="btn-primary" onclick='_saveProjectSettings(${esc(JSON.stringify(p.project))})' style="padding:10px 18px;font-size:13px">Save changes</button>
+      <button class="btn-sm" onclick='_closeProjectEditor(${esc(JSON.stringify(p.project))})'>Cancel</button>
       <div id="pes-${safeId}" style="margin-left:auto;font-size:12px;color:var(--text3);align-self:center"></div>
     </div>
   `;
@@ -249,11 +249,11 @@ async function _saveProjectSettings(name) {
 }
 
 function _goToAddBuild(projectName) {
-  // Switch to the Analyze tab and pre-select this project
+  // Write to localStorage first so loadProjectPicker (called by showTab) restores
+  // this project once the /api/project-summaries fetch completes — no race-prone timeout.
+  localStorage.setItem('memprobe-last-project', projectName);
   const navBtn = document.querySelector('.nav-btn[onclick*="analyze"]');
   if (navBtn) showTab('analyze', navBtn);
-  // loadProjectPicker is called by showTab, but wait a tick for the picker to render
-  setTimeout(() => selectProject(projectName), 80);
 }
 
 function _confirmDeleteProject(name) {
@@ -556,7 +556,7 @@ function _renderProjectRecent(name, data) {
   const tdBase  = 'padding:5px 8px;vertical-align:middle';
 
   box.innerHTML = `
-    <table style="width:100%;font-size:12px;border-collapse:collapse">
+    <table data-project="${esc(name)}" style="width:100%;font-size:12px;border-collapse:collapse">
       <thead><tr style="color:var(--text3);text-align:left">
         <th style="${thStyle}">Order</th>
         <th style="${thStyle}">File</th>
@@ -617,11 +617,12 @@ async function _toggleBuildActive(buildId, currentlyActive, tableId) {
 }
 
 async function _moveBuild(tableId, buildId, direction) {
-  // Find current data array, swap sort_orders with neighbour
   const projName = _findProjectByTableId(tableId);
   if (!projName) return;
+  // Re-fetch if cache was cleared by a recent toggle
+  if (!_projectTrendCache[projName]) await _loadProjectTrend(projName);
   const data = _projectTrendCache[projName];
-  if (!data) return;
+  if (!data || !data.length) return;
   const idx = data.findIndex(d => d.id === buildId);
   if (idx < 0) return;
   const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -652,7 +653,11 @@ function _editTimestamp(spanEl, buildId, currentIso) {
   spanEl.replaceWith(input);
   input.focus();
 
+  let _committing = false;
   const commit = async () => {
+    if (_committing) return;
+    _committing = true;
+    input.removeEventListener('blur', commit);  // prevent double-fire
     const newVal = input.value;
     if (!newVal || newVal === local) { input.replaceWith(spanEl); return; }
     // Convert datetime-local (no TZ) to ISO UTC by treating as local time
@@ -664,29 +669,23 @@ function _editTimestamp(spanEl, buildId, currentIso) {
         body: JSON.stringify({ timestamp: iso }),
       });
       if (!r.ok) { alert('Failed to update timestamp'); input.replaceWith(spanEl); return; }
-      // Refresh the whole panel
-      const allRows = document.querySelectorAll(`[data-build-id]`);
-      allRows.forEach(row => {
-        if (parseInt(row.dataset.buildId) === buildId) {
-          const cell = row.querySelector('.build-ts-display');
-          if (cell) cell.textContent = newVal.replace('T', ' ');
-        }
-      });
-      input.replaceWith(spanEl);
       spanEl.textContent = newVal.replace('T', ' ');
-      // Invalidate cache
-      for (const [projName, builds] of Object.entries(_projectTrendCache)) {
-        if (builds.some(b => b.id === buildId)) {
-          delete _projectTrendCache[projName];
-          _loadProjectTrend(projName);
-          break;
-        }
+      input.replaceWith(spanEl);
+      // Find project via the [data-project] table ancestor (spanEl is now in the DOM)
+      const projEl = spanEl.closest('[data-project]');
+      const projName = projEl ? projEl.dataset.project : null;
+      if (projName) {
+        delete _projectTrendCache[projName];
+        _loadProjectTrend(projName);
       }
     } catch (e) { alert(`Error: ${e.message}`); input.replaceWith(spanEl); }
   };
 
   input.addEventListener('blur', commit);
-  input.addEventListener('keydown', ev => { if (ev.key === 'Enter') input.blur(); if (ev.key === 'Escape') { input.replaceWith(spanEl); } });
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+    if (ev.key === 'Escape') { input.removeEventListener('blur', commit); input.replaceWith(spanEl); }
+  });
 }
 
 function _findProjectByTableId(tableId) {

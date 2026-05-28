@@ -1,0 +1,32 @@
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x0000000008000000 0x0000000000080000 xr
+RAM              0x0000000020000000 0x0000000000020000 xrw
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+.text           0x0000000008000000       0x2c0
+ .text.Reset_Handler
+                0x0000000008000000        0x80 startup.o
+                0x0000000008000000                Reset_Handler
+ .text.main     0x0000000008000080        0x48 main.o
+                0x0000000008000080                main
+ .text.HAL_Init
+                0x00000000080000c8       0x164 hal.o
+                0x00000000080000c8                HAL_Init
+
+.rodata         0x00000000080002c0        0x18
+ .rodata.version
+                0x00000000080002c0        0x18 main.o
+
+.data           0x0000000020000000        0x28
+ .data.config   0x0000000020000000        0x28 config.o [load address 0x00000000080002d8]
+                0x0000000020000000                g_config
+
+.bss            0x0000000020000028       0x400
+ .bss.g_rx_buffer
+                0x0000000020000028       0x400 hal.o
+                0x0000000020000028                g_rx_buffer

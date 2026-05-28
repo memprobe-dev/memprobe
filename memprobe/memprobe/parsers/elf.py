@@ -199,6 +199,7 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
 
     sorted_addrs = sorted(addr_to_loc)
     sorted_locs = [addr_to_loc[a] for a in sorted_addrs]
+    addr_to_loc.clear()  # done with the unsorted dict; free it before returning
     return name_map, die_addr_map, sorted_addrs, sorted_locs
 
 
@@ -309,6 +310,7 @@ def _estimate_ota_size(elf: ELFFile) -> dict:
             compressed = zlib.compress(data, 6)
             total_raw += len(data)
             total_compressed += len(compressed)
+            del data, compressed  # free immediately; don't hold two copies at once
         except Exception:
             continue
 

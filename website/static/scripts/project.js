@@ -48,7 +48,7 @@ function renderProjectPicker() {
 
   let html = _projectSummaries.map(p => {
     const sel = _selectedProject === p.project;
-    return `<div class="proj-card${sel ? ' selected' : ''}" onclick='selectProject(${JSON.stringify(p.project)})'>
+    return `<div class="proj-card${sel ? ' selected' : ''}" onclick='selectProject(${esc(JSON.stringify(p.project))})'>
       <div class="proj-card-check"><svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="proj-card-name" title="${esc(p.project)}">${esc(p.project)}</div>
       <div class="proj-card-meta">${p.build_count} build${p.build_count !== 1 ? 's' : ''} &middot; ${_fmtRelTime(p.last_build)}</div>

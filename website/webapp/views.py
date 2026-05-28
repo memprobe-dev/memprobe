@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shutil
 import tempfile
 import threading
 import time
@@ -160,7 +161,14 @@ def _is_pro(user) -> bool:
 
 
 def _load_upload(django_file):
-    """Parse a Django InMemoryUploadedFile into a MemoryMap."""
+    """Parse an uploaded file into a MemoryMap.
+
+    With FILE_UPLOAD_MAX_MEMORY_SIZE=0 Django always gives us a
+    TemporaryUploadedFile whose bytes are already on disk, so we can
+    parse directly from that path without any extra copy. For the rare
+    in-memory case (e.g. tests) we stream to a temp file instead of
+    reading the entire content into RAM first.
+    """
     if django_file.size > MAX_UPLOAD_BYTES:
         raise ValueError(f"File too large ({django_file.size // (1024*1024)} MB). Maximum is 30 MB.")
 
@@ -169,15 +177,24 @@ def _load_upload(django_file):
     if suffix not in _SUPPORTED:
         raise ValueError(f"Unsupported file type '{suffix}'. Supported: {', '.join(_SUPPORTED)}")
 
-    content = django_file.read()
-
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(content)
-        tmp_path = Path(tmp.name)
+    # If Django already wrote the upload to disk, use that path directly.
+    if hasattr(django_file, 'temporary_file_path'):
+        tmp_path = Path(django_file.temporary_file_path())
+        owned = False  # Django manages cleanup
+    else:
+        # In-memory fallback: stream to a temp file without reading all bytes at once.
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            django_file.seek(0)
+            shutil.copyfileobj(django_file, tmp)
+            tmp_path = Path(tmp.name)
+        owned = True
 
     try:
         if suffix == '.map':
-            if detect_iar(content):
+            # Read only a small header for IAR detection — avoids loading the whole file.
+            with open(tmp_path, 'rb') as fh:
+                header = fh.read(4096)
+            if detect_iar(header):
                 return map_iar.parse(tmp_path)
             return map_gcc.parse(tmp_path)
         else:
@@ -185,7 +202,8 @@ def _load_upload(django_file):
     except Exception as e:
         raise ValueError(f"Failed to parse {filename}: {e}") from e
     finally:
-        tmp_path.unlink(missing_ok=True)
+        if owned:
+            tmp_path.unlink(missing_ok=True)
 
 
 def _mmap_to_json(mmap, warnings) -> dict:
@@ -544,7 +562,9 @@ def delete_account(request):
         })
 
     # POST: actually delete. Require explicit confirmation to avoid accidents.
-    expected = f"delete {request.user.email}"
+    # Use email if available, otherwise fall back to username.
+    account_label = request.user.email or request.user.username or ''
+    expected = f"delete {account_label}"
     if request.POST.get('confirm', '').strip() != expected:
         return render(request, 'delete_account.html', {
             'user': request.user,
@@ -788,6 +808,7 @@ def api_history(request):
     return HttpResponse(status=405)
 
 
+@require_http_methods(['GET'])
 @api_login_required
 def api_history_trend(request):
     project = request.GET.get('project', '').strip()
@@ -800,16 +821,19 @@ def api_history_trend(request):
     return JsonResponse(rows, safe=False)
 
 
+@require_http_methods(['GET'])
 @api_login_required
 def api_projects(request):
     return JsonResponse(hist.list_projects(user_id=_uid(request)), safe=False)
 
 
+@require_http_methods(['GET'])
 @api_login_required
 def api_project_summaries(request):
     return JsonResponse(hist.list_project_summaries(user_id=_uid(request)), safe=False)
 
 
+@require_http_methods(['GET'])
 @api_login_required
 def api_projects_full(request):
     """Rich per-project view: stats + saved settings (budgets, description)."""
@@ -915,6 +939,17 @@ def api_history_patch(request, build_id: int):
     sort_order = body.get('sort_order')
     if active is not None and not isinstance(active, bool):
         return JsonResponse({'error': 'active must be boolean'}, status=400)
+    if sort_order is not None:
+        try:
+            sort_order = int(sort_order)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'sort_order must be an integer'}, status=400)
+    if timestamp is not None:
+        try:
+            from datetime import datetime
+            datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'timestamp must be a valid ISO 8601 string'}, status=400)
     updated = hist.update_build_meta(
         build_id, user_id=_uid(request),
         active=active, timestamp=timestamp, sort_order=sort_order,
@@ -924,6 +959,7 @@ def api_history_patch(request, build_id: int):
     return JsonResponse({'ok': True})
 
 
+@require_http_methods(['GET'])
 @api_login_required
 def api_history_build(request, build_id: int):
     build = hist.get_build(build_id, user_id=_uid(request))

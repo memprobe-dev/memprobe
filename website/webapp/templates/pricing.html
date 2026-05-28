@@ -10,10 +10,13 @@
 <link rel="stylesheet" href="{% static 'styles/base.css' %}">
 <script src="{% static 'scripts/theme-init.js' %}"></script>
 <style>
-  body { max-width: 860px; margin: 0 auto; padding: 60px 24px 100px; }
-  .back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px;
-          color: var(--text3); margin-bottom: 48px; text-decoration: none; }
-  .back:hover { color: var(--text); }
+  .snav { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 32px; border-bottom: 1px solid var(--border); margin-bottom: 48px; }
+  .snav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--text); font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
+  .snav-links { display: flex; align-items: center; gap: 4px; }
+  .snav-links a { font-size: 13px; color: var(--text2); text-decoration: none; padding: 5px 10px; border-radius: 6px; }
+  .snav-links a:hover { color: var(--text); background: var(--bg3); }
+  .snav-links a.active { color: var(--text); font-weight: 600; }
+  body { max-width: 860px; margin: 0 auto; padding: 24px 24px 100px; }
   .page-title { font-size: 32px; font-weight: 700; text-align: center; margin-bottom: 8px; }
   .page-sub { text-align: center; font-size: 15px; color: var(--text2); margin-bottom: 56px; }
   .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -45,10 +48,22 @@
 </style>
 </head>
 <body>
-  <a href="/" class="back">
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-    Back
-  </a>
+  <nav class="snav">
+    <a class="snav-logo" href="/">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" width="22" height="22">
+        <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7" fill="var(--bg2)" stroke="var(--border)" stroke-width="1.5"/>
+        <rect x="6" y="7"  width="20" height="5"  rx="1.4" fill="#5b9cf6"/>
+        <rect x="6" y="14" width="14" height="5"  rx="1.4" fill="#3dd68c"/>
+        <rect x="6" y="21" width="8"  height="5"  rx="1.4" fill="#f0a040"/>
+      </svg>
+      memprobe
+    </a>
+    <div class="snav-links">
+      <a href="/docs">Docs</a>
+      <a href="/pricing" class="active">Pricing</a>
+      <a href="/app">Open app</a>
+    </div>
+  </nav>
 
   <div class="page-title">Pricing</div>
   <div class="page-sub">Free during beta. Pro features are available to everyone right now.</div>

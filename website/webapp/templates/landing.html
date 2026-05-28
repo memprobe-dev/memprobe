@@ -701,6 +701,7 @@
       <div><span class="lnav-name">memprobe</span></div>
     </a>
     <div class="lnav-right">
+      <a href="/docs" style="font-size:13px;color:var(--text2);text-decoration:none;padding:6px 10px;border-radius:7px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text2)'">Docs</a>
       <a href="/pricing" style="font-size:13px;color:var(--text2);text-decoration:none;padding:6px 10px;border-radius:7px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--text2)'">Pricing</a>
       <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
         <svg id="lnav-moon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
@@ -1251,12 +1252,12 @@
       <div class="how-step" data-reveal>
         <div class="how-num">1</div>
         <h3>Drop your ELF or map file</h3>
-        <p>Drag in the output from GCC, Clang, or IAR: ELF, AXF, or a linker map. No install, no account needed. Your file is parsed locally and never stored on the server.</p>
+        <p>Drag in the output from GCC, Clang, or IAR: ELF, AXF, or a linker map. No install needed. Files are processed on the server and not stored after the request completes.</p>
       </div>
       <div class="how-step" data-reveal>
         <div class="how-num">2</div>
         <h3>See exactly what's in your binary</h3>
-        <p>Every section sized and colored. Every symbol (demangled if C++) traced back to its source file and line via DWARF. Compiler bloat flagged automatically with the specific flag to fix it, like <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">-fno-exceptions</code> or <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">--icf=safe</code>.</p>
+        <p>Every section sized and colored. Every symbol (demangled if C++) traced back to its source file and line via DWARF. Compiler bloat flagged with the specific flag to fix it, like <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">-fno-exceptions</code> or <code style="font-family:var(--mono);font-size:12px;color:var(--accent)">--icf=safe</code>.</p>
       </div>
       <div class="how-step" data-reveal>
         <div class="how-num">3</div>
@@ -1372,6 +1373,7 @@
         <h4>Product</h4>
         <a href="/app">Try memprobe</a>
         <a href="/pricing">Pricing</a>
+        <a href="/docs">Docs</a>
         <a href="/#features">Features</a>
         <a href="/#recordings">See it in action</a>
       </div>

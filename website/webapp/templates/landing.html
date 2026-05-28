@@ -11,10 +11,32 @@
   <meta property="og:title"       content="memprobe: Online ELF Analyzer &amp; Linker Map Viewer">
   <meta property="og:description" content="Online ELF analyzer for embedded firmware. Upload an ELF or linker map file and instantly see flash and RAM usage, symbol breakdown, treemap, and memory warnings. No install required.">
   <meta property="og:image"       content="https://memprobe.dev/static/og-image.png">
-  <meta name="twitter:card"       content="summary_large_image">
-  <meta name="twitter:title"      content="memprobe.dev | Firmware Memory Analyzer">
-  <meta name="twitter:description" content="See where every byte goes. Drop in an ELF or linker map and get a full symbol breakdown in seconds.">
-  <meta name="twitter:image"      content="https://memprobe.dev/static/og-image.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "memprobe",
+    "url": "https://memprobe.dev",
+    "description": "Online ELF analyzer for embedded firmware. Upload an ELF or linker map file and instantly see flash and RAM usage, symbol breakdown, treemap, and memory warnings.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "ELF binary analysis",
+      "Linker map file parsing",
+      "Flash and RAM usage breakdown",
+      "Symbol table viewer",
+      "Memory treemap",
+      "Build history and diffing",
+      "Shareable read-only links"
+    ],
+    "keywords": "ELF analyzer, linker map viewer, firmware memory analyzer, embedded, flash usage, RAM usage"
+  }
+  </script>
   <link rel="stylesheet" href="/static/styles/base.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/styles/layout.css?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/styles/components.css?v={{ asset_version }}">

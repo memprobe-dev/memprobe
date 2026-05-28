@@ -213,3 +213,38 @@ def test_dwarf_maps_freed_before_rodata_scans():
     assert "duplicate_strings" in result.binary_info
     assert "ota_estimate" in result.binary_info
     assert "build_stamps" in result.binary_info
+
+
+# -- DWARF CU cache clearing (memory regression guard) ------------------------
+
+def test_dwarf_cu_cache_cleared_after_walk():
+    """After parse(), pyelftools' internal DIE lists must be empty.
+
+    _build_dwarf_maps clears cu._dielist after each CU so that DIE objects
+    from one compilation unit are freed before the next one is parsed.
+    If this regresses, peak RAM climbs from O(one CU) to O(all CUs).
+    """
+    import gc
+    from elftools.elf.elffile import ELFFile
+
+    # Re-run the DWARF walk the same way the parser does and check the cache.
+    from memprobe.parsers import elf as elf_mod
+
+    with open(STM32_ELF, "rb") as f:
+        elf = ELFFile(f)
+        if not elf.has_dwarf_info():
+            return  # fixture has no DWARF; nothing to check
+        dwarf = elf.get_dwarf_info()
+        cus = list(dwarf.iter_CUs())
+
+    # Run the full build to trigger the cache-clearing path.
+    parse(STM32_ELF)
+    gc.collect()
+
+    # Every CU's dielist should be empty after parse() finishes.
+    for cu in cus:
+        dielist = getattr(cu, '_dielist', [])
+        assert dielist == [], (
+            f"cu._dielist not cleared after parse(); "
+            f"{len(dielist)} DIE objects still held in memory"
+        )

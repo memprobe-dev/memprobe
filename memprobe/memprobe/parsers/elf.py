@@ -1,5 +1,6 @@
 """ELF binary parser using pyelftools."""
 
+import array
 import bisect
 import gc
 import re
@@ -120,7 +121,9 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
     die_addr_map: dict[int, str] = {}
     addr_to_loc: dict[int, str] = {}
 
-    for cu in dwarf.iter_CUs():
+    _DIE_TAGS = {"DW_TAG_variable", "DW_TAG_subprogram"}
+
+    for cu_idx, cu in enumerate(dwarf.iter_CUs()):
         try:
             top_die = cu.get_top_DIE()
             addr_size = cu["address_size"]
@@ -131,8 +134,15 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
             file_entries = lineprog.header.file_entry if lineprog else []
             inc_dirs = lineprog.header.include_directory if lineprog else []
 
+            # Memoised per-CU: each unique file index is resolved once and
+            # cached for the remainder of this CU's DIE walk + line program.
+            _file_cache: dict[int, str] = {}
+
             def _resolve_file(file_idx: int) -> str:
+                if file_idx in _file_cache:
+                    return _file_cache[file_idx]
                 if file_idx == 0 or file_idx > len(file_entries):
+                    _file_cache[file_idx] = ""
                     return ""
                 entry = file_entries[file_idx - 1]
                 name = _decode(entry.name)
@@ -146,12 +156,16 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
                 full = f"{base}/{name}" if base else name
                 if comp_dir_str and full.startswith(comp_dir_str):
                     full = full[len(comp_dir_str):].lstrip("/")
+                _file_cache[file_idx] = full
                 return full
 
-            # -- Recursive DIE walk ----------------------------------------
-            _DIE_TAGS = {"DW_TAG_variable", "DW_TAG_subprogram"}
-
-            def _walk(die):
+            # -- Iterative DIE walk ----------------------------------------
+            # An iterative stack avoids Python recursion overhead and stack
+            # overflow on deeply nested DIE trees.  Logic is identical to the
+            # former recursive _walk().
+            stack = [top_die]
+            while stack:
+                die = stack.pop()
                 try:
                     if die.tag in _DIE_TAGS:
                         file_attr = die.attributes.get("DW_AT_decl_file")
@@ -181,10 +195,7 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
                                     die_addr_map[sym_addr] = loc_str
                 except Exception:
                     pass
-                for child in die.iter_children():
-                    _walk(child)
-
-            _walk(top_die)
+                stack.extend(die.iter_children())
 
             # -- Line program: last-resort fallback for code symbols --------
             if lineprog:
@@ -197,11 +208,27 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
                         addr_to_loc[state.address] = f"{path}:{state.line}"
 
         except Exception:
-            continue
+            pass
+        finally:
+            # pyelftools caches every parsed DIE object in cu._dielist.
+            # Without this, all CUs accumulate in memory simultaneously.
+            # Clearing after each CU drops peak from O(all CUs) to O(one CU).
+            if hasattr(cu, '_dielist'):
+                cu._dielist = []
+            if hasattr(cu, '_diemap'):
+                cu._diemap = {}
+            # Collect every 200 CUs so freed DIE objects are actually reclaimed.
+            if cu_idx % 200 == 199:
+                gc.collect()
 
-    sorted_addrs = sorted(addr_to_loc)
-    sorted_locs = [addr_to_loc[a] for a in sorted_addrs]
-    addr_to_loc.clear()  # done with the unsorted dict; free it before returning
+    # Build sorted address list as a compact array of unsigned 64-bit ints.
+    # array.array stores each address as 8 raw bytes vs ~28 bytes for a Python
+    # int object, saving ~20 MB per 1M line-program entries.
+    # bisect.bisect_right works on array.array without any changes to callers.
+    raw_addrs = sorted(addr_to_loc)
+    sorted_addrs = array.array('Q', raw_addrs)
+    sorted_locs = [addr_to_loc[a] for a in raw_addrs]
+    addr_to_loc.clear()
     return name_map, die_addr_map, sorted_addrs, sorted_locs
 
 

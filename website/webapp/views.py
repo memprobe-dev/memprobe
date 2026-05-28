@@ -50,10 +50,14 @@ def _rate_limit(max_calls: int, window_seconds: int):
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
-            key = str(request.user.pk) if request.user.is_authenticated else (
-                request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-                or request.META.get('REMOTE_ADDR', 'unknown')
-            )
+            if request.user.is_authenticated:
+                key = str(request.user.pk)
+            else:
+                # Use the rightmost X-Forwarded-For entry, which is appended by
+                # Render's edge proxy and cannot be spoofed by the client.
+                # The leftmost entry is attacker-controlled and must never be trusted.
+                fwd = request.META.get('HTTP_X_FORWARDED_FOR', '')
+                key = fwd.split(',')[-1].strip() if fwd else request.META.get('REMOTE_ADDR', 'unknown')
             now = time.monotonic()
             with _rate_lock:
                 calls = _rate_buckets[key]
@@ -369,10 +373,10 @@ def login_view(request):
     })
 
 
+@require_http_methods(['POST'])
 def logout_view(request):
-    """POST-only logout. GET requests just redirect to home."""
-    if request.method == 'POST':
-        auth_logout(request)
+    """POST-only logout. Enforces method so GET /logout cannot silently leave a session active."""
+    auth_logout(request)
     return redirect('/')
 
 
@@ -675,8 +679,11 @@ def api_analyze(request):
         try:
             build_id = hist.save(mmap, user_id=uid, analysis_json=result, project=project)
             result['build_id'] = build_id
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                'Failed to save build to history for user %s: %s', uid, exc
+            )
 
     return JsonResponse(result)
 
@@ -890,6 +897,29 @@ def api_project_detail(request, project_name: str):
 def api_history_delete(request, build_id: int):
     deleted = hist.delete_build(build_id, user_id=_uid(request))
     if not deleted:
+        return JsonResponse({'error': 'Build not found'}, status=404)
+    return JsonResponse({'ok': True})
+
+
+@csrf_exempt
+@require_http_methods(['PATCH'])
+@api_login_required
+def api_history_patch(request, build_id: int):
+    """Update mutable build metadata: active, timestamp, sort_order."""
+    try:
+        body = json.loads(request.body)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    active     = body.get('active')
+    timestamp  = body.get('timestamp')
+    sort_order = body.get('sort_order')
+    if active is not None and not isinstance(active, bool):
+        return JsonResponse({'error': 'active must be boolean'}, status=400)
+    updated = hist.update_build_meta(
+        build_id, user_id=_uid(request),
+        active=active, timestamp=timestamp, sort_order=sort_order,
+    )
+    if not updated:
         return JsonResponse({'error': 'Build not found'}, status=404)
     return JsonResponse({'ok': True})
 

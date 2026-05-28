@@ -8,7 +8,7 @@ async function loadHist() {
   if (!builds.length) { el.innerHTML = '<div class="hist-empty">No builds yet.</div>'; return; }
   el.innerHTML = '<div class="hist-row">' + builds.map(b => {
     const meta = [b.timestamp?.slice(0,19).replace('T',' '), b.git_branch, b.git_hash?.slice(0,7)].filter(Boolean).join('  ');
-    const hasData = !!b.analysis_json;
+    const hasData = !!b.has_analysis;
     return `<div class="hist-card" id="hcard-${b.id}">
       <div onclick="${hasData?`loadHistBuild(${b.id})`:'void 0'}" style="flex:1;cursor:${hasData?'pointer':'default'};display:flex;align-items:center;justify-content:space-between;gap:12px" title="${hasData?'Click to load analysis':'No analysis data stored for this build'}">
         <div>
@@ -44,7 +44,11 @@ async function clearHist() {
 }
 
 async function deleteHistBuild(id) {
-  await fetch(`/api/history/${id}/delete`, { method: 'DELETE' });
+  const res = await fetch(`/api/history/${id}/delete`, { method: 'DELETE' });
+  if (!res.ok) {
+    console.error('Failed to delete build', id, res.status);
+    return;
+  }
   const card = document.getElementById(`hcard-${id}`);
   if (card) card.remove();
   loadHist();

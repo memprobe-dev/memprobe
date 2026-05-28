@@ -201,6 +201,40 @@ CREATE TABLE IF NOT EXISTS project_settings (
 );
 """
 
+# Incremental migrations: add columns that may not exist on older DBs.
+_MIGRATIONS_SQL = """
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'builds' AND column_name = 'active'
+    ) THEN
+        ALTER TABLE builds ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE;
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'builds' AND column_name = 'sort_order'
+    ) THEN
+        ALTER TABLE builds ADD COLUMN sort_order INTEGER;
+        -- backfill: assign sort_order based on timestamp within each project
+        UPDATE builds b
+        SET sort_order = sub.rn
+        FROM (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY user_id, project
+                       ORDER BY timestamp ASC
+                   ) AS rn
+            FROM builds
+            WHERE project IS NOT NULL
+        ) sub
+        WHERE b.id = sub.id AND b.project IS NOT NULL;
+    END IF;
+END $$;
+"""
+
 # RLS is applied separately because it requires ALTER TABLE and CREATE POLICY,
 # which need the table to already exist and the DB user to be the table owner.
 # init_db() calls _apply_rls() after the schema is created; failures are
@@ -267,6 +301,7 @@ def init_db() -> None:
     """Create tables, indexes, and RLS policies. Safe to call on every startup."""
     with _db() as conn:
         _exec(conn, _SCHEMA)
+        _exec(conn, _MIGRATIONS_SQL)
     _apply_rls()
 
 
@@ -341,12 +376,24 @@ def save(
     """Persist a MemoryMap to the history database. Returns the new build id."""
     git_hash, git_branch = _detect_git(mmap.source_file)
     ts = mmap.timestamp or datetime.now(timezone.utc)
+    proj = project.strip() if project and project.strip() else None
     with _db(user_id=user_id) as conn:
+        # Compute next sort_order for this project (NULL projects get NULL sort_order)
+        if proj:
+            row = _fetchone(conn,
+                """SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order
+                   FROM builds WHERE user_id = %s AND project = %s""",
+                (user_id, proj),
+            )
+            next_order = row['next_order'] if row else 1
+        else:
+            next_order = None
         cur = _exec(conn,
             """INSERT INTO builds
                (user_id, source_file, timestamp, git_hash, git_branch,
-                total_flash, total_ram, toolchain, project, metadata, analysis_json)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                total_flash, total_ram, toolchain, project, metadata, analysis_json,
+                active, sort_order)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)
                RETURNING id""",
             (
                 user_id,
@@ -357,9 +404,10 @@ def save(
                 mmap.total_flash,
                 mmap.total_ram,
                 mmap.toolchain,
-                project.strip() if project and project.strip() else None,
+                proj,
                 json.dumps({}),
                 json.dumps(analysis_json) if analysis_json else None,
+                next_order,
             ),
         )
         return cur.fetchone()['id']
@@ -380,10 +428,18 @@ def get_build(build_id: int, user_id: str) -> Optional[dict]:
 
 
 def list_builds(user_id: str) -> list:
-    """Return all builds for user_id, newest first."""
+    """Return all builds for user_id, newest first.
+
+    Intentionally excludes ``analysis_json`` — that column can be many MB per
+    row and the list view only needs summary fields.  Use ``get_build`` to
+    fetch the full analysis for a single build.
+    """
     with _db(user_id=user_id) as conn:
         return _fetchall(conn,
-            "SELECT * FROM builds WHERE user_id = %s ORDER BY timestamp DESC",
+            """SELECT id, user_id, source_file, timestamp, git_hash, git_branch,
+                      total_flash, total_ram, toolchain, project, metadata,
+                      (analysis_json IS NOT NULL) AS has_analysis
+               FROM builds WHERE user_id = %s ORDER BY timestamp DESC""",
             (user_id,),
         )
 
@@ -394,6 +450,33 @@ def delete_build(build_id: int, user_id: str) -> bool:
         cur = _exec(conn,
             "DELETE FROM builds WHERE id = %s AND user_id = %s",
             (build_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_build_meta(
+    build_id: int,
+    user_id: str,
+    *,
+    active: Optional[bool] = None,
+    timestamp: Optional[str] = None,
+    sort_order: Optional[int] = None,
+) -> bool:
+    """Update mutable metadata on a build. Returns True if a row was updated."""
+    sets, vals = [], []
+    if active is not None:
+        sets.append("active = %s"); vals.append(active)
+    if timestamp is not None:
+        sets.append("timestamp = %s"); vals.append(timestamp)
+    if sort_order is not None:
+        sets.append("sort_order = %s"); vals.append(sort_order)
+    if not sets:
+        return False
+    vals.extend([build_id, user_id])
+    with _db(user_id=user_id) as conn:
+        cur = _exec(conn,
+            f"UPDATE builds SET {', '.join(sets)} WHERE id = %s AND user_id = %s",
+            vals,
         )
         return cur.rowcount > 0
 
@@ -479,33 +562,37 @@ def get_trend(
         if project:
             rows = _fetchall(conn,
                 """SELECT id, source_file, timestamp, git_hash, git_branch,
-                          total_flash, total_ram, project
+                          total_flash, total_ram, project, active, sort_order
                    FROM builds WHERE user_id = %s AND project = %s
-                   ORDER BY timestamp ASC LIMIT %s""",
+                   ORDER BY COALESCE(sort_order, 0) ASC, timestamp ASC LIMIT %s""",
                 (user_id, project, limit),
             )
         elif source_file:
             rows = _fetchall(conn,
                 """SELECT id, source_file, timestamp, git_hash, git_branch,
-                          total_flash, total_ram, project
+                          total_flash, total_ram, project, active, sort_order
                    FROM builds WHERE user_id = %s AND source_file LIKE %s
                                      AND project IS NOT NULL
-                   ORDER BY timestamp ASC LIMIT %s""",
+                   ORDER BY COALESCE(sort_order, 0) ASC, timestamp ASC LIMIT %s""",
                 (user_id, f'%{Path(source_file).name}%', limit),
             )
         else:
             rows = _fetchall(conn,
                 """SELECT id, source_file, timestamp, git_hash, git_branch,
-                          total_flash, total_ram, project
+                          total_flash, total_ram, project, active, sort_order
                    FROM builds WHERE user_id = %s AND project IS NOT NULL
-                   ORDER BY timestamp ASC LIMIT %s""",
+                   ORDER BY COALESCE(sort_order, 0) ASC, timestamp ASC LIMIT %s""",
                 (user_id, limit),
             )
-    return [{
+    all_rows = [{
         **r,
         'basename':  Path(r['source_file']).name,
+        'active':    r.get('active', True),
+        'sort_order': r.get('sort_order'),
         'timestamp': r['timestamp'].isoformat() if hasattr(r.get('timestamp'), 'isoformat') else r.get('timestamp'),
     } for r in rows]
+    # Chart only uses active builds; the full list (for the management table) is returned as-is
+    return all_rows
 
 
 # ── Project settings ──────────────────────────────────────────────────────────
@@ -540,9 +627,9 @@ def save_project_settings(
                 description, created_at, updated_at)
                VALUES (%s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (user_id, project) DO UPDATE SET
-                   flash_budget_bytes = EXCLUDED.flash_budget_bytes,
-                   ram_budget_bytes   = EXCLUDED.ram_budget_bytes,
-                   description        = EXCLUDED.description,
+                   flash_budget_bytes = COALESCE(EXCLUDED.flash_budget_bytes, project_settings.flash_budget_bytes),
+                   ram_budget_bytes   = COALESCE(EXCLUDED.ram_budget_bytes,   project_settings.ram_budget_bytes),
+                   description        = COALESCE(EXCLUDED.description,        project_settings.description),
                    updated_at         = EXCLUDED.updated_at""",
             (user_id, project, flash_budget_bytes, ram_budget_bytes,
              description, now, now),
@@ -598,12 +685,21 @@ def list_projects_full(user_id: str) -> list:
         for r in proj_rows:
             name = r['project']
             seen.add(name)
-            latest = _fetchone(conn,
+            two_builds = _fetchall(conn,
                 """SELECT total_flash, total_ram FROM builds
                    WHERE user_id = %s AND project = %s
-                   ORDER BY timestamp DESC LIMIT 1""",
+                   ORDER BY timestamp DESC LIMIT 2""",
                 (user_id, name),
             )
+            latest = two_builds[0] if two_builds else None
+            prev   = two_builds[1] if len(two_builds) > 1 else None
+            flash_delta = None
+            ram_delta   = None
+            if latest and prev:
+                if latest['total_flash'] is not None and prev['total_flash'] is not None:
+                    flash_delta = latest['total_flash'] - prev['total_flash']
+                if latest['total_ram'] is not None and prev['total_ram'] is not None:
+                    ram_delta = latest['total_ram'] - prev['total_ram']
             s = settings_by_name.get(name, {})
             result.append({
                 'project':             name,
@@ -612,6 +708,8 @@ def list_projects_full(user_id: str) -> list:
                 'last_build':          _iso(r['last_build']),
                 'latest_flash':        latest['total_flash'] if latest else None,
                 'latest_ram':          latest['total_ram']   if latest else None,
+                'flash_delta':         flash_delta,
+                'ram_delta':           ram_delta,
                 'flash_budget_bytes':  s.get('flash_budget_bytes'),
                 'ram_budget_bytes':    s.get('ram_budget_bytes'),
                 'description':         s.get('description'),
@@ -629,6 +727,8 @@ def list_projects_full(user_id: str) -> list:
                 'last_build':          None,
                 'latest_flash':        None,
                 'latest_ram':          None,
+                'flash_delta':         None,
+                'ram_delta':           None,
                 'flash_budget_bytes':  s.get('flash_budget_bytes'),
                 'ram_budget_bytes':    s.get('ram_budget_bytes'),
                 'description':         s.get('description'),

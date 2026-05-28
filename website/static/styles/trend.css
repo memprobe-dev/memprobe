@@ -28,3 +28,25 @@
 .btn-newfile:hover { opacity: .92; transform: translateY(-1px); color: #fff; }
 .btn-newfile:active { transform: translateY(0); }
 
+/* ── Build order buttons (up/down in builds table) ─────────────────────────── */
+.build-order-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text3);
+  width: 20px; height: 20px;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0; line-height: 1;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.build-order-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.build-order-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+

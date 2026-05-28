@@ -59,7 +59,10 @@ function _budgetKey(proj) {
 }
 
 function saveBudgetForProject(proj) {
-  // Save current budget values under the PREVIOUS project key before switching
+  // Save current budget inputs to localStorage under the current project key
+  // before the caller switches _selectedProject to the new one. This prevents
+  // in-progress edits from being lost when the user clicks a different project.
+  saveBudget();
 }
 
 async function loadBudgetForProject(proj) {

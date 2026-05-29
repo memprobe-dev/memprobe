@@ -63,12 +63,12 @@ def estimate_mb(file_size: int) -> int:
 # Cost: xs ~$0.19/month + sm ~$0.44/month = ~$0.63/month total.
 # md and lg cold-start on demand — large files are rare enough that the retry
 # from sm gives them time to spin up.
-@app.function(memory=128,  cpu=1.0, timeout=300, image=image, min_containers=1, scaledown_window=300)
+@app.function(memory=128,  cpu=1.0, timeout=300, image=image)
 def parse_file_xs(file_bytes: bytes, filename: str) -> dict:
     return _parse_impl(file_bytes, filename)
 
 
-@app.function(memory=768,  cpu=4.0, timeout=300, image=image, min_containers=1, scaledown_window=300)
+@app.function(memory=768,  cpu=4.0, timeout=300, image=image)
 def parse_file_sm(file_bytes: bytes, filename: str) -> dict:
     return _parse_impl(file_bytes, filename)
 

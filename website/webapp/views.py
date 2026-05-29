@@ -67,6 +67,7 @@ def _pick_tier(file_size: int) -> str:
     if est <= 768:
         return 'md'
     return 'lg'
+from .models import AnalysisJob
 from memprobe.diff import diff as compute_diff
 from memprobe.models import MemoryMap, Section, Symbol, SectionType, MemoryRegion
 from memprobe.report import _human_bytes, _SECTION_COLORS, _build_treemap_data
@@ -374,8 +375,64 @@ def _mmap_from_history(build_id: int, user_id: str) -> MemoryMap:
     )
 
 
-def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> MemoryMap:
+def _call_modal_fn(fn, compressed: bytes, filename: str, on_progress) -> dict | None:
+    """Call a Modal function, handling both generator (new) and blocking (old) workers.
+
+    Returns the raw result dict, or None if no result was produced.
+    Raises ValueError for parse errors, lets other exceptions propagate.
+    """
+    # Try generator path first (new worker with progress reporting).
+    # If remote_gen isn't supported or the worker isn't a generator, fall
+    # back to the blocking remote() call automatically.
+    result = None
+    gen_worked = False
+
+    try:
+        for event in fn.remote_gen(compressed, filename):
+            gen_worked = True
+            stage = event.get('stage', '')
+            if stage == 'error':
+                logger.error('Modal parse error (gen): %s\n%s', event.get('error'), event.get('traceback', ''))
+                raise ValueError('Could not parse file. Check that it is a valid ELF or linker map.')
+            if on_progress and 'progress' in event:
+                try:
+                    on_progress(event['progress'], stage)
+                except Exception:
+                    pass
+            if stage == 'done':
+                result = event['result']
+                break
+            # Old non-generator worker returns a single plain dict — detect and handle it.
+            if 'sections' in event and stage == '':
+                result = event
+                break
+    except ValueError:
+        raise
+    except Exception as exc:
+        if gen_worked:
+            # Generator started but blew up mid-stream — real error.
+            raise
+        # remote_gen itself failed before yielding anything — worker is old, fall back.
+        logger.warning('remote_gen failed for %s, falling back to remote(): %s', filename, exc)
+        raw = fn.remote(compressed, filename)
+        if raw and 'error' in raw:
+            logger.error('Modal parse error (remote): %s\n%s', raw['error'], raw.get('traceback', ''))
+            raise ValueError('Could not parse file. Check that it is a valid ELF or linker map.')
+        result = raw
+
+    return result
+
+
+def _analyze_via_modal(
+    file_bytes: bytes,
+    filename: str,
+    file_size: int,
+    on_progress=None,
+) -> MemoryMap:
     """Call Modal to parse the file, retrying with larger tiers on OOM/timeout.
+
+    on_progress(fraction, stage) is called for each progress event from the
+    Modal generator. fraction is 0.0-1.0.
 
     Raises ValueError on parse errors or if all tiers are exhausted.
     """
@@ -384,6 +441,10 @@ def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> Memo
     except ImportError:
         FunctionTimeoutError = Exception  # fallback if Modal API changes
 
+    import time as _time
+    import zlib as _zlib
+
+    compressed = _zlib.compress(file_bytes, level=1)
     start_tier = _pick_tier(file_size)
     tiers_to_try = _MODAL_TIERS[_MODAL_TIERS.index(start_tier):]
 
@@ -392,34 +453,24 @@ def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> Memo
         if fn is None:
             raise ValueError('Modal is not available. Try again later.')
 
-        import time as _time
-        import zlib as _zlib
-        compressed = _zlib.compress(file_bytes, level=1)  # level=1: fast, still good ratio
         logger.info(
             'Modal parse: %s, tier=%s, file_size=%d bytes (compressed: %d bytes, %.1fx)',
             filename, tier, file_size, len(compressed), file_size / max(len(compressed), 1),
         )
         t_call = _time.monotonic()
+        result = None
         try:
-            result = fn.remote(compressed, filename)
+            result = _call_modal_fn(fn, compressed, filename, on_progress)
         except FunctionTimeoutError:
-            logger.warning(
-                'Modal OOM/timeout: %s tier=%s file_size=%d — retrying with larger tier',
-                filename, tier, file_size,
-            )
+            logger.warning('Modal OOM/timeout: %s tier=%s — retrying', filename, tier)
             continue
+        except ValueError:
+            raise
         except Exception as exc:
-            logger.error(
-                'Modal call failed: %s tier=%s — %s: %s',
-                filename, tier, type(exc).__name__, exc, exc_info=True,
-            )
+            logger.error('Modal call failed: %s tier=%s — %s: %s', filename, tier, type(exc).__name__, exc, exc_info=True)
             raise ValueError('Analysis failed. Please try again later.') from exc
 
-        if 'error' in result:
-            logger.error(
-                'Modal parse error: %s tier=%s — %s\n%s',
-                filename, tier, result['error'], result.get('traceback', ''),
-            )
+        if result is None:
             raise ValueError('Could not parse file. Check that it is a valid ELF or linker map.')
 
         round_trip_s = round(_time.monotonic() - t_call, 2)
@@ -825,6 +876,82 @@ def index(request):
     return resp
 
 
+# ── Background analysis job helpers ───────────────────────────────────────────
+
+def _run_analysis_job(job_id: str, file_bytes: bytes, filename: str,
+                      file_size: int, user_id: str | None, project: str | None,
+                      is_guest: bool, session_key: str | None) -> None:
+    """Run the full analysis in a background thread and update AnalysisJob."""
+    import django.db
+    django.db.close_old_connections()
+
+    try:
+        job = AnalysisJob.objects.get(job_id=job_id)
+        job.status = AnalysisJob.STATUS_RUNNING
+        job.save(update_fields=['status', 'updated_at'])
+
+        if _USE_MODAL:
+            def _on_progress(frac: float, stage: str):
+                try:
+                    AnalysisJob.objects.filter(job_id=job_id).update(progress=round(frac, 3))
+                except Exception:
+                    pass  # progress updates are best-effort
+
+            mmap = _analyze_via_modal(file_bytes, filename, file_size, on_progress=_on_progress)
+        else:
+            import io
+            from django.core.files.uploadedfile import InMemoryUploadedFile
+            fake_file = InMemoryUploadedFile(
+                io.BytesIO(file_bytes), 'file', filename,
+                'application/octet-stream', len(file_bytes), None,
+            )
+            mmap = _load_upload(fake_file)
+
+        mmap.source_file = filename
+        warnings = bloat_analyze(mmap)
+        result = _mmap_to_json(mmap, warnings)
+
+        if user_id:
+            project_val = project
+            result['project'] = project_val
+
+            existing_projects = hist.list_projects(user_id=user_id)
+            if project_val and project_val not in existing_projects and len(existing_projects) >= MAX_PROJECTS:
+                job.status = AnalysisJob.STATUS_FAILED
+                job.error_message = f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'
+                job.save(update_fields=['status', 'error_message', 'updated_at'])
+                return
+
+            all_builds = hist.list_builds(user_id=user_id)
+            if len(all_builds) >= MAX_BUILDS:
+                job.status = AnalysisJob.STATUS_FAILED
+                job.error_message = f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'
+                job.save(update_fields=['status', 'error_message', 'updated_at'])
+                return
+
+            try:
+                build_id = hist.save(mmap, user_id=user_id, analysis_json=result, project=project_val)
+                result['build_id'] = build_id
+            except Exception as exc:
+                logger.error('Failed to save build for user %s: %s', user_id, exc)
+
+        job.result_json = json.dumps(result)
+        job.status = AnalysisJob.STATUS_DONE
+        job.save(update_fields=['status', 'result_json', 'updated_at'])
+
+    except Exception as exc:
+        logger.error('Background analysis job %s failed: %s', job_id, exc, exc_info=True)
+        try:
+            job = AnalysisJob.objects.get(job_id=job_id)
+            job.status = AnalysisJob.STATUS_FAILED
+            job.error_message = str(exc)[:512]
+            job.save(update_fields=['status', 'error_message', 'updated_at'])
+        except Exception:
+            pass
+    finally:
+        django.db.close_old_connections()
+
+
 # ── Protected API views ────────────────────────────────────────────────────────
 
 @csrf_exempt
@@ -847,36 +974,15 @@ def api_analyze(request):
         )
     uploaded_file = request.FILES['file']
     filename = uploaded_file.name or 'firmware'
+    uploaded_file.seek(0)
+    file_bytes = uploaded_file.read()
+    file_size = len(file_bytes)
 
-    try:
-        if _USE_MODAL:
-            uploaded_file.seek(0)
-            file_bytes = uploaded_file.read()
-            mmap = _analyze_via_modal(file_bytes, filename, uploaded_file.size)
-        else:
-            mmap = _load_upload(uploaded_file)
-    except ValueError as e:
-        return HttpResponseBadRequest(
-            json.dumps({'error': str(e)}),
-            content_type='application/json',
-        )
-
-    mmap.source_file = filename
-    try:
-        warnings = bloat_analyze(mmap)
-        result = _mmap_to_json(mmap, warnings)
-    except Exception as e:
-        import traceback, logging
-        logging.getLogger(__name__).error('Analysis failed: %s', traceback.format_exc())
-        return JsonResponse({'error': f'Analysis failed: {e}'}, status=500)
-
-    # Only save to history for authenticated users
+    # Check limits before starting background job so we can reject synchronously.
     if request.user.is_authenticated:
-        project = request.POST.get('project', '').strip() or None
-        result['project'] = project
         uid = _uid(request)
+        project = request.POST.get('project', '').strip() or None
 
-        # Enforce project cap
         if project:
             existing_projects = hist.list_projects(user_id=uid)
             if project not in existing_projects and len(existing_projects) >= MAX_PROJECTS:
@@ -885,24 +991,56 @@ def api_analyze(request):
                     status=403,
                 )
 
-        # Enforce total build history cap (10 across all projects)
         all_builds = hist.list_builds(user_id=uid)
         if len(all_builds) >= MAX_BUILDS:
             return JsonResponse(
                 {'error': f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'},
                 status=403,
             )
+    else:
+        uid = None
+        project = None
 
-        try:
-            build_id = hist.save(mmap, user_id=uid, analysis_json=result, project=project)
-            result['build_id'] = build_id
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).error(
-                'Failed to save build to history for user %s: %s', uid, exc
-            )
+    job_id = secrets.token_hex(16)
+    AnalysisJob.objects.create(
+        job_id=job_id,
+        status=AnalysisJob.STATUS_PENDING,
+        user_id=uid,
+        filename=filename,
+    )
 
-    return JsonResponse(result)
+    t = threading.Thread(
+        target=_run_analysis_job,
+        args=(job_id, file_bytes, filename, file_size, uid, project,
+              not request.user.is_authenticated, request.session.session_key),
+        daemon=True,
+    )
+    t.start()
+
+    return JsonResponse({'job_id': job_id, 'filename': filename})
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def api_job_status(request, job_id: str):
+    """Poll the status of a background analysis job."""
+    try:
+        job = AnalysisJob.objects.get(job_id=job_id)
+    except AnalysisJob.DoesNotExist:
+        return JsonResponse({'error': 'Job not found.'}, status=404)
+
+    if job.status == AnalysisJob.STATUS_DONE:
+        result = json.loads(job.result_json)
+        # Clean up after delivering the result once.
+        job.delete()
+        return JsonResponse({'status': 'done', 'result': result})
+
+    if job.status == AnalysisJob.STATUS_FAILED:
+        error = job.error_message or 'Analysis failed. Please try again.'
+        job.delete()
+        return JsonResponse({'status': 'failed', 'error': error})
+
+    return JsonResponse({'status': job.status, 'progress': round(job.progress, 3)})
 
 
 def _resolve_side(request, side: str) -> MemoryMap:

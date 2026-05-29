@@ -237,7 +237,7 @@ def _process_cu_chunk(file_path: str, target_offsets: frozenset) -> tuple[dict, 
     return name_map, die_addr_map, addr_to_loc
 
 
-def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None) -> tuple[dict[str, str], dict[int, str], list[int], list[str]]:
+def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None, progress_cb=None) -> tuple[dict[str, str], dict[int, str], list[int], list[str]]:
     """Build lookup structures from DWARF info:
 
     1. name_map:  symbol name (mangled or unmangled) → "file:line"
@@ -286,8 +286,13 @@ def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None) -> tuple[d
                     for offsets in worker_offsets
                     if offsets
                 ]
+                total_futures = len(futures)
+                done_count = 0
                 for fut in futures:
                     c_name, c_die, c_loc = fut.result()
+                    done_count += 1
+                    if progress_cb:
+                        progress_cb(done_count / total_futures)
                     for k, v in c_name.items():
                         if k not in name_map:
                             name_map[k] = v
@@ -618,8 +623,17 @@ def _find_duplicate_strings(elf: ELFFile) -> list[dict]:
     return results[:40]
 
 
-def parse(elf_file: Path) -> MemoryMap:
-    """Parse an ELF binary into a MemoryMap."""
+def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
+    """Parse an ELF binary into a MemoryMap.
+
+    progress_cb, if provided, is called with (fraction: float, stage: str)
+    at key milestones throughout the parse. fraction is 0.0-1.0 relative to
+    the full parse operation (not just the DWARF phase).
+    """
+    def _emit(frac: float, stage: str):
+        if progress_cb:
+            progress_cb(frac, stage)
+
     with open(elf_file, "rb") as f:
         elf = ELFFile(f)
 
@@ -628,8 +642,18 @@ def parse(elf_file: Path) -> MemoryMap:
         bitness = elf.elfclass  # 32 or 64
         e_flags = elf.header.get("e_flags", 0)
 
-        # Build DWARF lookup maps (name, die-address, line-program)
-        dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs = _build_dwarf_maps(elf, elf_file)
+        _emit(0.05, "elf_header")
+
+        # Build DWARF lookup maps (name, die-address, line-program).
+        # The DWARF walk is the bulk of parse time (0.10-0.85 of total).
+        def _dwarf_chunk_done(chunk_frac: float):
+            # chunk_frac: 0-1 as each parallel worker finishes.
+            _emit(0.10 + chunk_frac * 0.75, "dwarf_chunks")
+
+        dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs = _build_dwarf_maps(
+            elf, elf_file, progress_cb=_dwarf_chunk_done
+        )
+        _emit(0.87, "dwarf_done")
 
         # Collect symbol table
         symbols_by_section_idx: dict[int, list[Symbol]] = {}

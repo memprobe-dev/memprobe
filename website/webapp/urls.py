@@ -26,6 +26,7 @@ urlpatterns = [
 
     # Protected API
     path('api/analyze',                       views.api_analyze,          name='api_analyze'),
+    path('api/jobs/<str:job_id>',             views.api_job_status,       name='api_job_status'),
     path('api/diff',                          views.api_diff,             name='api_diff'),
     path('api/history',                       views.api_history,          name='api_history'),
     path('api/history/trend',                 views.api_history_trend,    name='api_history_trend'),

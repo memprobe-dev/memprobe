@@ -157,6 +157,74 @@
 .tag.removed { background: #2e0d0d; color: #f06060; }
 .tag.changed { background: #2e1e00; color: #f0a040; }
 
+/* ── Analyzing in-tab state ─────────────────────────────────────────────── */
+.analyzing-inner {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 16px;
+  min-height: 300px; text-align: center; padding: 40px 24px;
+}
+.analyzing-spinner {
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 3px solid var(--bg4);
+  border-top-color: var(--accent, #5b9cf6);
+  animation: spin .8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.analyzing-title    { font-size: 18px; font-weight: 600; color: var(--text); }
+.analyzing-filename { font-size: 13px; color: var(--text3); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.analyzing-bar-wrap { width: 100%; max-width: 320px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.analyzing-track    { width: 100%; height: 6px; }
+.analyzing-status   { font-size: 11px; color: var(--text3); }
+
+/* Pulsing fill when server progress stalls (e.g. cold start) */
+.ac-fill { transition: width .35s ease; }
+.ac-fill.pulsing {
+  animation: bar-pulse 1.8s ease-in-out infinite;
+}
+@keyframes bar-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+
+/* ── Analysis progress chip ─────────────────────────────────────────────── */
+#analysis-chip {
+  position: fixed; bottom: 24px; right: 24px; z-index: 10000;
+  width: 280px; background: var(--bg3); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 14px 16px 12px; box-shadow: 0 4px 24px rgba(0,0,0,.35);
+  display: none; flex-direction: column; gap: 6px;
+  transition: opacity .2s, transform .2s;
+}
+#analysis-chip.show { display: flex; }
+.ac-header { display: flex; align-items: center; justify-content: space-between; }
+.ac-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.ac-close {
+  background: none; border: none; color: var(--text3); cursor: pointer;
+  font-size: 12px; padding: 2px 4px; border-radius: 4px; line-height: 1;
+}
+.ac-close:hover { color: var(--text); background: var(--bg4); }
+.ac-file { font-size: 11px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ac-track {
+  height: 4px; background: var(--bg4); border-radius: 2px; overflow: hidden; margin-top: 2px;
+}
+.ac-fill {
+  height: 100%; width: 0%; background: var(--accent, #5b9cf6);
+  border-radius: 2px; transition: width .4s ease;
+}
+#analysis-chip.done   .ac-fill { background: #3dd68c; }
+#analysis-chip.failed .ac-fill { background: #f06060; }
+.ac-status { font-size: 11px; color: var(--text2); }
+.ac-view-btn {
+  margin-top: 4px; background: var(--accent, #5b9cf6); color: #fff;
+  border: none; border-radius: 6px; padding: 6px 12px; font-size: 12px;
+  font-weight: 600; cursor: pointer; align-self: flex-start;
+}
+.ac-view-btn:hover { opacity: .85; }
+
+@media (max-width: 768px) {
+  #analysis-chip { bottom: 12px; right: 12px; left: 12px; width: auto; }
+}
+
 @media (max-width: 768px) {
   .kpi-row { gap: 8px; }
   .kpi-card { min-width: 120px; padding: 14px 14px 12px; }

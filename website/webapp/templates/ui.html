@@ -167,6 +167,19 @@
     </div>
   </div>
 
+  <!-- Analyzing state (shown while background job runs) -->
+  <div id="analyzing-ui" class="upload-page" style="display:none">
+    <div class="analyzing-inner">
+      <div class="analyzing-spinner"></div>
+      <div class="analyzing-title" id="analyzing-title">Analyzing…</div>
+      <div class="analyzing-filename" id="analyzing-filename"></div>
+      <div class="analyzing-bar-wrap">
+        <div class="ac-track analyzing-track"><div class="ac-fill" id="analyzing-fill"></div></div>
+        <div class="analyzing-status" id="analyzing-status">Queued…</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Results (rendered inline) -->
   <div id="results" class="results-wrap">
     <div class="result-header">

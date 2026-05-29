@@ -26,6 +26,216 @@ function _countUpInt(el, target, duration = 900) {
   requestAnimationFrame(step);
 }
 
+// ── Job notification chip ──────────────────────────────────────────────────────
+
+const _JOB_KEY = 'memprobe-job';
+
+function _getStoredJob() {
+  try { return JSON.parse(localStorage.getItem(_JOB_KEY) || 'null'); } catch { return null; }
+}
+function _setStoredJob(obj) {
+  if (obj) localStorage.setItem(_JOB_KEY, JSON.stringify(obj));
+  else localStorage.removeItem(_JOB_KEY);
+}
+
+// Returns the chip element, creating it once if needed.
+function _getChip() {
+  let chip = document.getElementById('analysis-chip');
+  if (chip) return chip;
+
+  chip = document.createElement('div');
+  chip.id = 'analysis-chip';
+  chip.innerHTML = `
+    <div class="ac-header">
+      <span class="ac-title" id="ac-title">Analyzing…</span>
+      <button class="ac-close" id="ac-close" title="Dismiss">✕</button>
+    </div>
+    <div class="ac-file" id="ac-file"></div>
+    <div class="ac-track"><div class="ac-fill" id="ac-fill"></div></div>
+    <div class="ac-status" id="ac-status">Uploading…</div>
+    <button class="ac-view-btn" id="ac-view-btn" style="display:none">View results</button>
+  `;
+  document.body.appendChild(chip);
+
+  document.getElementById('ac-close').addEventListener('click', () => {
+    _setStoredJob(null);
+    chip.classList.remove('show', 'done', 'failed');
+  });
+
+  document.getElementById('ac-view-btn').addEventListener('click', () => {
+    const job = _getStoredJob();
+    if (job && job.result) {
+      _setStoredJob(null);
+      chip.classList.remove('show', 'done');
+      showTab('analyze', document.querySelector('.nav-btn'));
+      renderResults(job.result, job.result.build_id || null);
+    }
+  });
+
+  return chip;
+}
+
+function _setChipProgress(pct, statusText) {
+  const fill   = document.getElementById('ac-fill');
+  const status = document.getElementById('ac-status');
+  if (fill)   fill.style.width = Math.round(pct) + '%';
+  if (status) status.textContent = statusText;
+
+  // Mirror into the in-tab analyzing UI.
+  const tabFill   = document.getElementById('analyzing-fill');
+  const tabStatus = document.getElementById('analyzing-status');
+  const tabTitle  = document.getElementById('analyzing-title');
+  if (tabFill)   tabFill.style.width = Math.round(pct) + '%';
+  if (tabStatus) tabStatus.textContent = statusText;
+  if (tabTitle && pct >= 100) tabTitle.textContent = statusText === 'Complete' ? 'Done!' : statusText;
+}
+
+// Real progress comes from the Modal worker via the poll endpoint.
+// A lightweight simulation fills the gap between polls and during cold starts
+// so the bar always appears to move forward.
+
+let _progressInterval = null;
+let _currentDisplayPct = 0;
+
+// Smoothly animate the bar to a new real value.
+function _animateTo(targetPct, statusText) {
+  _setChipProgress(targetPct, statusText);
+  _currentDisplayPct = targetPct;
+  document.getElementById('ac-fill')?.classList.remove('pulsing');
+  document.getElementById('analyzing-fill')?.classList.remove('pulsing');
+}
+
+// Start a gentle drift simulation: advance slowly so the bar never looks frozen
+// when there are no new progress events from the server (e.g. during cold start
+// or between DWARF worker chunks). The drift never reaches 100% on its own.
+function _startDrift(fromPct) {
+  if (_progressInterval) clearInterval(_progressInterval);
+  _currentDisplayPct = fromPct;
+  _progressInterval = setInterval(() => {
+    const remaining = 90 - _currentDisplayPct;
+    if (remaining <= 0) {
+      clearInterval(_progressInterval);
+      document.getElementById('ac-fill')?.classList.add('pulsing');
+      document.getElementById('analyzing-fill')?.classList.add('pulsing');
+      return;
+    }
+    // Drift 1% of the remaining gap each tick — asymptotic, never reaches 90%.
+    _currentDisplayPct += remaining * 0.012;
+    _setChipProgress(_currentDisplayPct, 'Analyzing…');
+  }, 400);
+}
+
+function _stopDrift() {
+  if (_progressInterval) { clearInterval(_progressInterval); _progressInterval = null; }
+  document.getElementById('ac-fill')?.classList.remove('pulsing');
+  document.getElementById('analyzing-fill')?.classList.remove('pulsing');
+}
+
+function _showAnalyzingUI(filename) {
+  const uploadUI    = document.getElementById('upload-ui');
+  const analyzingUI = document.getElementById('analyzing-ui');
+  const title       = document.getElementById('analyzing-title');
+  const fn          = document.getElementById('analyzing-filename');
+  if (uploadUI)    uploadUI.style.display    = 'none';
+  if (analyzingUI) analyzingUI.style.display = '';
+  if (title)       title.textContent         = 'Analyzing…';
+  if (fn)          fn.textContent            = filename || '';
+}
+
+function _hideAnalyzingUI() {
+  const uploadUI    = document.getElementById('upload-ui');
+  const analyzingUI = document.getElementById('analyzing-ui');
+  if (analyzingUI) analyzingUI.style.display = 'none';
+  // Only restore upload UI if results aren't showing.
+  const results = document.getElementById('results');
+  if (uploadUI && !(results && results.classList.contains('show'))) {
+    uploadUI.style.display = '';
+  }
+}
+
+// Main polling loop. Uses real progress from the server, with a drift
+// simulation filling the gaps between polls.
+async function _pollJob(job_id) {
+  for (;;) {
+    await new Promise(r => setTimeout(r, 1500));
+    let data;
+    try {
+      const resp = await fetch(`/api/jobs/${job_id}`);
+      data = await resp.json();
+    } catch {
+      // Network hiccup — keep retrying.
+      continue;
+    }
+
+    // Advance bar to real progress if server reports higher than current display.
+    if (data.progress != null) {
+      const realPct = Math.round(data.progress * 100);
+      if (realPct > _currentDisplayPct) {
+        _stopDrift();
+        _animateTo(realPct, 'Analyzing…');
+        _startDrift(realPct);  // resume drift from new baseline
+      }
+    }
+
+    if (data.status === 'done') {
+      _stopDrift();
+      _animateTo(100, 'Complete');
+
+      const chip = _getChip();
+      chip.classList.add('done');
+      document.getElementById('ac-title').textContent = 'Analysis complete';
+      document.getElementById('ac-view-btn').style.display = '';
+
+      // Store result so the view button can render it.
+      const job = _getStoredJob();
+      if (job) { job.result = data.result; job.status = 'done'; _setStoredJob(job); }
+
+      // If the user is on the analyze tab and results aren't already showing, auto-render.
+      const analyzeTab  = document.getElementById('tab-analyze');
+      const resultsEl   = document.getElementById('results');
+      const onAnalyzeTab   = analyzeTab && analyzeTab.classList.contains('visible');
+      const resultsVisible = resultsEl  && resultsEl.classList.contains('show');
+      if (onAnalyzeTab && !resultsVisible) {
+        _setStoredJob(null);
+        chip.classList.remove('show', 'done');
+        _hideAnalyzingUI();
+        renderResults(data.result, data.result.build_id || null);
+        setBusy('a', false);
+      } else {
+        // User is on another tab — leave the chip, hide the in-tab spinner.
+        _hideAnalyzingUI();
+      }
+      return;
+    }
+
+    if (data.status === 'failed') {
+      _stopDrift();
+      _hideAnalyzingUI();
+
+      const errMsg = data.error || 'Analysis failed. Please try again.';
+      const chip = _getChip();
+      chip.classList.add('failed');
+      document.getElementById('ac-title').textContent = 'Analysis failed';
+      document.getElementById('ac-status').textContent = errMsg;
+      document.getElementById('ac-status').style.color = 'var(--red, #f06060)';
+      // Move bar to 100% in red (done by .failed class on fill via CSS).
+      const fill = document.getElementById('ac-fill');
+      if (fill) fill.style.width = '100%';
+      const tabFill = document.getElementById('analyzing-fill');
+      if (tabFill) tabFill.style.width = '100%';
+
+      _setStoredJob(null);
+
+      showErr('a', errMsg);
+      setBusy('a', false);
+      return;
+    }
+    // status is pending or running — keep polling.
+  }
+}
+
+// ── Main entry point ──────────────────────────────────────────────────────────
+
 async function runAnalyze() {
   const f = document.getElementById('fi-a').files[0]; if (!f) return;
   const projName = _selectedProject === '__new__'
@@ -34,24 +244,102 @@ async function runAnalyze() {
   if (_selectedProject === '__new__' && !projName) return;
 
   setBusy('a', true); hideErr('a');
+
   const fd = new FormData();
   fd.append('file', f);
   if (projName) fd.append('project', projName);
+
+  let jobId, filename;
   try {
     const res = await fetch('/api/analyze', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok) { showErr('a', data.error || data.detail || res.statusText); return; }
-    if (projName) {
-      localStorage.setItem('memprobe-last-project', projName);
-      _selectedProject = projName;
+    if (!res.ok) {
+      showErr('a', data.error || data.detail || res.statusText);
+      setBusy('a', false);
+      return;
     }
-    if (typeof _IS_GUEST === 'undefined' || !_IS_GUEST) {
-      await loadProjectPicker();
-    }
-    renderResults(data, data.build_id || null);
-  } catch(e) { console.error('Analyze failed:', e); showErr('a', e?.message || 'Unknown error'); }
-  finally { setBusy('a', false); }
+    jobId = data.job_id;
+    filename = data.filename || f.name;
+  } catch(e) {
+    console.error('Analyze submit failed:', e);
+    showErr('a', e?.message || 'Upload failed. Please try again.');
+    setBusy('a', false);
+    return;
+  }
+
+  if (projName) {
+    localStorage.setItem('memprobe-last-project', projName);
+    _selectedProject = projName;
+  }
+  if (typeof _IS_GUEST === 'undefined' || !_IS_GUEST) {
+    await loadProjectPicker();
+  }
+
+  // Store job in localStorage for cross-tab-navigation persistence.
+  _setStoredJob({ job_id: jobId, filename, status: 'running', started_at: Date.now() });
+
+  // Show the in-tab analyzing state.
+  _showAnalyzingUI(filename);
+
+  // Show progress chip (corner).
+  const chip = _getChip();
+  chip.classList.remove('done', 'failed');
+  chip.classList.add('show');
+  document.getElementById('ac-title').textContent = 'Analyzing…';
+  document.getElementById('ac-file').textContent = filename;
+  document.getElementById('ac-view-btn').style.display = 'none';
+  document.getElementById('ac-status').style.color = '';
+
+  // Start bar at 5% and drift forward while waiting for real progress events.
+  _animateTo(5, 'Uploaded, queued for analysis…');
+  _startDrift(5);
+
+  _pollJob(jobId);
 }
+
+// ── Page-load restore ─────────────────────────────────────────────────────────
+// If a job was in progress when the user navigated away, resume polling.
+
+(function _restoreJob() {
+  const job = _getStoredJob();
+  if (!job || !job.job_id) return;
+
+  if (job.status === 'done' && job.result) {
+    // Job finished while user was away — show the chip with "view results".
+    const chip = _getChip();
+    chip.classList.add('show', 'done');
+    document.getElementById('ac-title').textContent = 'Analysis complete';
+    document.getElementById('ac-file').textContent = job.filename || '';
+    document.getElementById('ac-view-btn').style.display = '';
+    _setChipProgress(100, 'Complete');
+    return;
+  }
+
+  if (job.status === 'running') {
+    // Resume the chip and restart polling.
+    const elapsed  = Date.now() - (job.started_at || Date.now());
+    // Mirror the ease-out from _startProgressSimulation: cap at 65% over 40s.
+    const linear   = Math.min(1, elapsed / 40000);
+    const eased    = 1 - Math.pow(1 - linear, 2);
+    const pct      = Math.min(65, 10 + 55 * eased);
+
+    _showAnalyzingUI(job.filename);
+
+    const chip = _getChip();
+    chip.classList.remove('done', 'failed');
+    chip.classList.add('show');
+    document.getElementById('ac-title').textContent = 'Analyzing…';
+    document.getElementById('ac-file').textContent  = job.filename || '';
+    document.getElementById('ac-view-btn').style.display = 'none';
+    document.getElementById('ac-status').style.color = '';
+    _setChipProgress(pct, 'Analyzing…');
+
+    _startDrift(pct);
+    _pollJob(job.job_id);
+  }
+})();
+
+// ── Render results ────────────────────────────────────────────────────────────
 
 function renderResults(d, histBuildId) {
   _lastAnalysis = d;

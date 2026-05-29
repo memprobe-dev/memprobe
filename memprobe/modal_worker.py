@@ -25,9 +25,12 @@ Local test:
 from __future__ import annotations
 
 import math
+import queue as _queue
 import tempfile
+import threading as _threading
 import traceback
 from pathlib import Path
+from typing import Generator
 
 import modal
 
@@ -55,97 +58,149 @@ def estimate_mb(file_size: int) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Tiered functions — same implementation, different memory allocations.
+# Tiered functions — same generator implementation, different memory limits.
+# Callers use fn.remote_gen() to receive progress events as the parse runs,
+# with the final event carrying the completed result dict.
 # ---------------------------------------------------------------------------
-# xs and sm are kept warm — covers small files and your typical 20+ MB debug
-# ELF. Cold starts add RAM overhead on top of the parse peak so warm containers
-# are required for reliability, not just speed.
-# Cost: xs ~$0.19/month + sm ~$0.44/month = ~$0.63/month total.
-# md and lg cold-start on demand — large files are rare enough that the retry
-# from sm gives them time to spin up.
 @app.function(memory=128,  cpu=1.0, timeout=300, image=image)
-def parse_file_xs(file_bytes: bytes, filename: str) -> dict:
-    return _parse_impl(file_bytes, filename)
+def parse_file_xs(file_bytes: bytes, filename: str) -> Generator[dict, None, None]:
+    yield from _parse_impl_gen(file_bytes, filename)
 
 
 @app.function(memory=768,  cpu=4.0, timeout=300, image=image)
-def parse_file_sm(file_bytes: bytes, filename: str) -> dict:
-    return _parse_impl(file_bytes, filename)
+def parse_file_sm(file_bytes: bytes, filename: str) -> Generator[dict, None, None]:
+    yield from _parse_impl_gen(file_bytes, filename)
 
 
 @app.function(memory=1024, cpu=4.0, timeout=300, image=image)
-def parse_file_md(file_bytes: bytes, filename: str) -> dict:
-    return _parse_impl(file_bytes, filename)
+def parse_file_md(file_bytes: bytes, filename: str) -> Generator[dict, None, None]:
+    yield from _parse_impl_gen(file_bytes, filename)
 
 
 @app.function(memory=2048, cpu=4.0, timeout=300, image=image)
-def parse_file_lg(file_bytes: bytes, filename: str) -> dict:
-    return _parse_impl(file_bytes, filename)
+def parse_file_lg(file_bytes: bytes, filename: str) -> Generator[dict, None, None]:
+    yield from _parse_impl_gen(file_bytes, filename)
 
 
 # ---------------------------------------------------------------------------
-# Shared implementation.
+# Shared generator implementation.
 # ---------------------------------------------------------------------------
-def _parse_impl(file_bytes: bytes, filename: str) -> dict:
-    """Parse an ELF or linker map and return a serialisable dict.
-
-    file_bytes may be zlib-compressed (detected by magic bytes).
-    Always includes "peak_ram_mb" and "timings" so the caller can log
-    where time is actually spent.
-    Returns {"error": str, "traceback": str} on failure.
-    """
+# Each yielded dict is either a progress event:
+#   {"progress": 0.0-1.0, "stage": str}
+# or the final result event:
+#   {"progress": 1.0, "stage": "done", "result": dict}
+# or an error event:
+#   {"progress": 1.0, "stage": "error", "error": str, "traceback": str}
+#
+# The parse itself is run on a background thread so the generator can yield
+# progress events from the parse callbacks without blocking.
+# ---------------------------------------------------------------------------
+def _parse_impl_gen(file_bytes: bytes, filename: str) -> Generator[dict, None, None]:
     import tracemalloc
     import time
     import zlib
 
+    yield {"progress": 0.05, "stage": "started"}
+
     # Decompress if the caller sent zlib-compressed bytes.
-    if file_bytes[:2] == b'\x78\x9c' or file_bytes[:2] == b'\x78\xda' or file_bytes[:2] == b'\x78\x01':
+    if file_bytes[:2] in (b'\x78\x9c', b'\x78\xda', b'\x78\x01'):
         file_bytes = zlib.decompress(file_bytes)
+
+    yield {"progress": 0.10, "stage": "decompressed"}
 
     suffix = Path(filename).suffix.lower()
     t0 = time.monotonic()
+    tracemalloc.start()
 
-    try:
-        tracemalloc.start()
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(file_bytes)
+        tmp_path = Path(tmp.name)
+    t_write = time.monotonic()
 
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(file_bytes)
-            tmp_path = Path(tmp.name)
-        t_write = time.monotonic()
+    yield {"progress": 0.12, "stage": "file_written"}
 
+    # Run the blocking parse on a background thread so this generator can
+    # drain the progress queue and yield events while it runs.
+    progress_q: _queue.Queue = _queue.Queue()
+    result_box: list = [None]
+    error_box:  list = [None]
+
+    def _run_parse():
         try:
             if suffix == ".map":
                 from memprobe.parsers.map_gcc import parse as parse_gcc
                 from memprobe.parsers.map_iar import parse as parse_iar, detect_iar
+                progress_q.put({"progress": 0.40, "stage": "parsing_map"})
                 if detect_iar(file_bytes[:4096]):
                     mmap = parse_iar(tmp_path)
                 else:
                     mmap = parse_gcc(tmp_path)
             else:
                 from memprobe.parsers.elf import parse as parse_elf
-                mmap = parse_elf(tmp_path)
+
+                def _on_elf_progress(frac: float, stage: str):
+                    # frac is 0-1 within the ELF parse; map to 0.12-0.88 overall.
+                    overall = 0.12 + frac * 0.76
+                    progress_q.put({"progress": overall, "stage": stage})
+
+                mmap = parse_elf(tmp_path, progress_cb=_on_elf_progress)
+
+            result_box[0] = mmap
+        except Exception as exc:
+            error_box[0] = exc
         finally:
-            tmp_path.unlink(missing_ok=True)
-        t_parse = time.monotonic()
+            progress_q.put(None)  # sentinel: parse is done
 
-        _, peak_bytes = tracemalloc.get_traced_memory()
+    t = _threading.Thread(target=_run_parse, daemon=True)
+    t.start()
+
+    # Drain progress events until the sentinel arrives.
+    while True:
+        try:
+            item = progress_q.get(timeout=290)
+        except _queue.Empty:
+            break
+        if item is None:
+            break
+        yield item
+
+    t.join(timeout=5)
+    tmp_path.unlink(missing_ok=True)
+    t_parse = time.monotonic()
+
+    if error_box[0] is not None:
         tracemalloc.stop()
-
-        result = _mmap_to_dict(mmap)
-        t_serialize = time.monotonic()
-
-        result["peak_ram_mb"] = round(peak_bytes / 1024 / 1024, 1)
-        result["timings"] = {
-            "write_s":     round(t_write     - t0,      2),
-            "parse_s":     round(t_parse     - t_write, 2),
-            "serialize_s": round(t_serialize - t_parse, 2),
-            "total_s":     round(t_serialize - t0,      2),
+        yield {
+            "progress": 1.0,
+            "stage": "error",
+            "error": f"Parse failed: {error_box[0]}",
+            "traceback": traceback.format_exc(),
         }
-        return result
+        return
 
-    except Exception as e:
+    mmap = result_box[0]
+    if mmap is None:
         tracemalloc.stop()
-        return {"error": f"Parse failed: {e}", "traceback": traceback.format_exc()}
+        yield {"progress": 1.0, "stage": "error", "error": "Parse returned no result."}
+        return
+
+    _, peak_bytes = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    yield {"progress": 0.90, "stage": "serializing"}
+
+    result = _mmap_to_dict(mmap)
+    t_serialize = time.monotonic()
+
+    result["peak_ram_mb"] = round(peak_bytes / 1024 / 1024, 1)
+    result["timings"] = {
+        "write_s":     round(t_write     - t0,      2),
+        "parse_s":     round(t_parse     - t_write, 2),
+        "serialize_s": round(t_serialize - t_parse, 2),
+        "total_s":     round(t_serialize - t0,      2),
+    }
+
+    yield {"progress": 1.0, "stage": "done", "result": result}
 
 
 def _mmap_to_dict(mmap) -> dict:

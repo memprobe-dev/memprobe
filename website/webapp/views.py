@@ -413,15 +413,14 @@ def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> Memo
                 'Modal call failed: %s tier=%s — %s: %s',
                 filename, tier, type(exc).__name__, exc, exc_info=True,
             )
-            raise ValueError(f'Modal error: {exc}') from exc
+            raise ValueError('Analysis failed. Please try again later.') from exc
 
         if 'error' in result:
             logger.error(
                 'Modal parse error: %s tier=%s — %s\n%s',
                 filename, tier, result['error'], result.get('traceback', ''),
             )
-            first_line = result['error'].splitlines()[0]
-            raise ValueError(first_line)
+            raise ValueError('Could not parse file. Check that it is a valid ELF or linker map.')
 
         round_trip_s = round(_time.monotonic() - t_call, 2)
         peak_mb = result.get('peak_ram_mb')

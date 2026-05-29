@@ -408,8 +408,18 @@ def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> Memo
                 filename, tier, file_size,
             )
             continue
+        except Exception as exc:
+            logger.error(
+                'Modal call failed: %s tier=%s — %s: %s',
+                filename, tier, type(exc).__name__, exc, exc_info=True,
+            )
+            raise ValueError(f'Modal error: {exc}') from exc
 
         if 'error' in result:
+            logger.error(
+                'Modal parse error: %s tier=%s — %s\n%s',
+                filename, tier, result['error'], result.get('traceback', ''),
+            )
             first_line = result['error'].splitlines()[0]
             raise ValueError(first_line)
 

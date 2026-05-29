@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import secrets
 import shutil
 import tempfile
@@ -11,6 +13,8 @@ import time
 from collections import defaultdict
 from functools import wraps
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from django.conf import settings
 from django.contrib.auth import logout as auth_logout
@@ -23,6 +27,46 @@ from django.views.decorators.http import require_http_methods
 
 from memprobe.parsers import map_gcc, map_iar, detect_iar
 from memprobe.parsers import elf as elf_parser
+
+# Modal remote parser — only active when USE_MODAL=true.
+# Function handles are resolved lazily on first use per tier so a slow Modal
+# API never stalls gunicorn worker startup.
+_USE_MODAL = os.environ.get('USE_MODAL', '').lower() in ('1', 'true', 'yes')
+
+# Retry order — if a tier times out (OOM) we step to the next one.
+_MODAL_TIERS = ['xs', 'sm', 'md', 'lg']
+_modal_fns: dict[str, object] = {}  # populated lazily on first use per tier
+
+
+def _modal_fn(key: str):
+    """Return (and cache) the Modal function handle for the given tier key."""
+    if key not in _modal_fns:
+        try:
+            import modal as _modal
+            _modal_fns[key] = _modal.Function.from_name(
+                'memprobe-parser', f'parse_file_{key}'
+            )
+        except Exception as exc:
+            logger.warning('Modal unavailable (%s): %s', key, exc)
+            return None
+    return _modal_fns[key]
+
+
+def _pick_tier(file_size: int) -> str:
+    """Pick the smallest Modal tier that fits the estimated RAM for file_size.
+
+    Formula: ceil(file_size_mb * 9.4 * 1.3), mapped to tiers:
+      xs=128 MB, sm=300 MB, md=512 MB, lg=1024 MB
+    """
+    import math
+    est = max(128, math.ceil((file_size / (1024 * 1024)) * 9.4 * 1.3))
+    if est <= 128:
+        return 'xs'
+    if est <= 512:
+        return 'sm'
+    if est <= 768:
+        return 'md'
+    return 'lg'
 from memprobe.diff import diff as compute_diff
 from memprobe.models import MemoryMap, Section, Symbol, SectionType, MemoryRegion
 from memprobe.report import _human_bytes, _SECTION_COLORS, _build_treemap_data
@@ -329,6 +373,109 @@ def _mmap_from_history(build_id: int, user_id: str) -> MemoryMap:
         regions=regions,
     )
 
+
+def _analyze_via_modal(file_bytes: bytes, filename: str, file_size: int) -> MemoryMap:
+    """Call Modal to parse the file, retrying with larger tiers on OOM/timeout.
+
+    Raises ValueError on parse errors or if all tiers are exhausted.
+    """
+    try:
+        from modal.exception import FunctionTimeoutError
+    except ImportError:
+        FunctionTimeoutError = Exception  # fallback if Modal API changes
+
+    start_tier = _pick_tier(file_size)
+    tiers_to_try = _MODAL_TIERS[_MODAL_TIERS.index(start_tier):]
+
+    for tier in tiers_to_try:
+        fn = _modal_fn(tier)
+        if fn is None:
+            raise ValueError('Modal is not available. Try again later.')
+
+        import time as _time
+        import zlib as _zlib
+        compressed = _zlib.compress(file_bytes, level=1)  # level=1: fast, still good ratio
+        logger.info(
+            'Modal parse: %s, tier=%s, file_size=%d bytes (compressed: %d bytes, %.1fx)',
+            filename, tier, file_size, len(compressed), file_size / max(len(compressed), 1),
+        )
+        t_call = _time.monotonic()
+        try:
+            result = fn.remote(compressed, filename)
+        except FunctionTimeoutError:
+            logger.warning(
+                'Modal OOM/timeout: %s tier=%s file_size=%d — retrying with larger tier',
+                filename, tier, file_size,
+            )
+            continue
+
+        if 'error' in result:
+            first_line = result['error'].splitlines()[0]
+            raise ValueError(first_line)
+
+        round_trip_s = round(_time.monotonic() - t_call, 2)
+        peak_mb = result.get('peak_ram_mb')
+        timings = result.get('timings', {})
+        logger.info(
+            'Modal parse complete: %s tier=%s peak_ram=%.1f MB allocated=%s MB '
+            'round_trip=%.1fs (transfer=%.1fs parse=%.1fs serialize=%.1fs)',
+            filename, tier, peak_mb or 0,
+            {'xs': 128, 'sm': 512, 'md': 768, 'lg': 1024}[tier],
+            round_trip_s,
+            round_trip_s - timings.get('total_s', 0),
+            timings.get('parse_s', 0),
+            timings.get('serialize_s', 0),
+        )
+
+        return _mmap_from_modal(result, filename)
+
+    raise ValueError('File requires more memory than available. Try a smaller or stripped binary.')
+
+
+def _mmap_from_modal(data: dict, filename: str) -> MemoryMap:
+    """Reconstruct a MemoryMap from the dict returned by the Modal worker."""
+    sections = []
+    for sd in data.get('sections', []):
+        symbols = [
+            Symbol(
+                name=s['name'],
+                size=s['size'],
+                address=s.get('address', 0),
+                section=s['section'],
+                object_file=s.get('object_file', ''),
+                library=s.get('library') or None,
+                source_location=s.get('source_location') or None,
+            )
+            for s in sd.get('symbols', [])
+        ]
+        sections.append(Section(
+            name=sd['name'],
+            size=sd['size'],
+            address=sd.get('address', 0),
+            section_type=SectionType(sd['type']),
+            symbols=symbols,
+            vma=sd.get('vma', 0),
+            lma=sd.get('lma', 0),
+        ))
+
+    regions = [
+        MemoryRegion(
+            name=r['name'],
+            origin=r.get('origin', 0),
+            length=r['length'],
+            used=r.get('used', 0),
+        )
+        for r in data.get('regions', [])
+    ]
+
+    return MemoryMap(
+        source_file=data.get('source_file', filename),
+        toolchain=data.get('toolchain', 'unknown'),
+        target=data.get('target'),
+        sections=sections,
+        regions=regions,
+        binary_info=data.get('binary_info') or None,
+    )
 
 
 # ── Public web views ───────────────────────────────────────────────────────────
@@ -689,15 +836,23 @@ def api_analyze(request):
             json.dumps({'error': 'No file uploaded'}),
             content_type='application/json',
         )
+    uploaded_file = request.FILES['file']
+    filename = uploaded_file.name or 'firmware'
+
     try:
-        mmap = _load_upload(request.FILES['file'])
+        if _USE_MODAL:
+            uploaded_file.seek(0)
+            file_bytes = uploaded_file.read()
+            mmap = _analyze_via_modal(file_bytes, filename, uploaded_file.size)
+        else:
+            mmap = _load_upload(uploaded_file)
     except ValueError as e:
         return HttpResponseBadRequest(
             json.dumps({'error': str(e)}),
             content_type='application/json',
         )
 
-    mmap.source_file = request.FILES['file'].name or mmap.source_file
+    mmap.source_file = filename
     try:
         warnings = bloat_analyze(mmap)
         result = _mmap_to_json(mmap, warnings)

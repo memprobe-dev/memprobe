@@ -5,6 +5,7 @@ import bisect
 import gc
 import re
 import zlib
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -103,7 +104,140 @@ def _extract_die_addr(die, addr_size: int) -> Optional[int]:
     return None
 
 
-def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], list[int], list[str]]:
+def _process_cu_chunk(file_path: str, target_offsets: frozenset) -> tuple[dict, dict, dict]:
+    """Worker: process only the CUs at the given byte offsets in .debug_info.
+
+    Runs in a subprocess. Opens its own ELFFile handle so workers don't share
+    state. Iterates CUs but skips by reading headers only (fast) until it hits
+    a target offset, then breaks as soon as it passes the last target.
+    Returns (name_map, die_addr_map, addr_to_loc) partial dicts to be merged.
+    """
+    import gc as _gc
+    from elftools.elf.elffile import ELFFile as _ELFFile
+
+    name_map: dict = {}
+    die_addr_map: dict = {}
+    addr_to_loc: dict = {}
+    _DIE_TAGS = {"DW_TAG_variable", "DW_TAG_subprogram"}
+
+    max_offset = max(target_offsets)
+
+    with open(file_path, "rb") as f:
+        elf = _ELFFile(f)
+        if not elf.has_dwarf_info():
+            return name_map, die_addr_map, addr_to_loc
+        dwarf = elf.get_dwarf_info()
+
+        processed = 0
+        skipped = 0
+        for cu in dwarf.iter_CUs():
+            cu_off = cu.cu_offset
+            if cu_off > max_offset:
+                break  # Past all our targets — stop early.
+            if cu_off not in target_offsets:
+                # Skip without parsing DIEs.
+                if hasattr(cu, "_dielist"):
+                    cu._dielist = []
+                if hasattr(cu, "_diemap"):
+                    cu._diemap = {}
+                skipped += 1
+                if skipped % 200 == 0:
+                    _gc.collect()
+                continue
+
+            try:
+                top_die = cu.get_top_DIE()
+                addr_size = cu["address_size"]
+                comp_dir_attr = top_die.attributes.get("DW_AT_comp_dir")
+                comp_dir_str = _decode(comp_dir_attr.value) if comp_dir_attr else ""
+
+                lineprog = dwarf.line_program_for_CU(cu)
+                file_entries = lineprog.header.file_entry if lineprog else []
+                inc_dirs = lineprog.header.include_directory if lineprog else []
+                _file_cache: dict = {}
+
+                def _resolve_file(
+                    file_idx: int,
+                    _cache: dict = _file_cache,
+                    _entries: list = file_entries,
+                    _dirs: list = inc_dirs,
+                    _comp_dir: str = comp_dir_str,
+                ) -> str:
+                    if file_idx in _cache:
+                        return _cache[file_idx]
+                    if file_idx == 0 or file_idx > len(_entries):
+                        _cache[file_idx] = ""
+                        return ""
+                    entry = _entries[file_idx - 1]
+                    name = _decode(entry.name)
+                    dir_idx = entry.dir_index
+                    if dir_idx == 0:
+                        base = _comp_dir
+                    elif dir_idx <= len(_dirs):
+                        base = _decode(_dirs[dir_idx - 1])
+                    else:
+                        base = _comp_dir
+                    full = f"{base}/{name}" if base else name
+                    if _comp_dir and full.startswith(_comp_dir):
+                        full = full[len(_comp_dir):].lstrip("/")
+                    _cache[file_idx] = full
+                    return full
+
+                stack = [top_die]
+                while stack:
+                    die = stack.pop()
+                    try:
+                        if die.tag in _DIE_TAGS:
+                            file_attr = die.attributes.get("DW_AT_decl_file")
+                            line_attr = die.attributes.get("DW_AT_decl_line")
+                            if file_attr and line_attr:
+                                path = _resolve_file(int(file_attr.value))
+                                if path:
+                                    loc_str = f"{path}:{int(line_attr.value)}"
+                                    name_attr = die.attributes.get("DW_AT_name")
+                                    if name_attr:
+                                        uname = _decode(name_attr.value)
+                                        if uname not in name_map:
+                                            name_map[uname] = loc_str
+                                    for lnk_attr_name in ("DW_AT_linkage_name",
+                                                          "DW_AT_MIPS_linkage_name"):
+                                        lnk = die.attributes.get(lnk_attr_name)
+                                        if lnk:
+                                            mname = _decode(lnk.value)
+                                            if mname not in name_map:
+                                                name_map[mname] = loc_str
+                                            break
+                                    sym_addr = _extract_die_addr(die, addr_size)
+                                    if sym_addr is not None and sym_addr not in die_addr_map:
+                                        die_addr_map[sym_addr] = loc_str
+                    except Exception:
+                        pass
+                    stack.extend(die.iter_children())
+
+                if lineprog:
+                    for entry in lineprog.get_entries():
+                        state = entry.state
+                        if state is None or state.end_sequence or state.file == 0:
+                            continue
+                        path = _resolve_file(state.file)
+                        if path and state.address not in addr_to_loc:
+                            addr_to_loc[state.address] = f"{path}:{state.line}"
+
+            except Exception:
+                pass
+            finally:
+                if hasattr(cu, "_dielist"):
+                    cu._dielist = []
+                if hasattr(cu, "_diemap"):
+                    cu._diemap = {}
+                processed += 1
+                if processed % 200 == 0:
+                    _gc.collect()
+
+    return name_map, die_addr_map, addr_to_loc
+
+
+def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None) -> tuple[dict[str, str], dict[int, str], list[int], list[str]]:
     """Build lookup structures from DWARF info:
 
     1. name_map:  symbol name (mangled or unmangled) → "file:line"
@@ -120,6 +254,51 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
     name_map: dict[str, str] = {}
     die_addr_map: dict[int, str] = {}
     addr_to_loc: dict[int, str] = {}
+
+    # Fast pass: collect CU offsets and sizes (header reads only, no DIE parsing).
+    cu_info: list[tuple[int, int]] = []  # (cu_offset, unit_length)
+    for cu in dwarf.iter_CUs():
+        cu_info.append((cu.cu_offset, cu["unit_length"]))
+        if hasattr(cu, "_dielist"):
+            cu._dielist = []
+        if hasattr(cu, "_diemap"):
+            cu._diemap = {}
+    total_cus = len(cu_info)
+
+    # Parallel processing: distribute CUs across workers weighted by unit_length
+    # so each worker gets roughly equal byte-work rather than equal CU count.
+    _PARALLEL_THRESHOLD = 40
+    if file_path is not None and total_cus >= _PARALLEL_THRESHOLD:
+        n_workers = min(4, total_cus)
+        worker_offsets: list[list[int]] = [[] for _ in range(n_workers)]
+        worker_loads: list[int] = [0] * n_workers
+        for cu_off, cu_len in cu_info:
+            w = worker_loads.index(min(worker_loads))
+            worker_offsets[w].append(cu_off)
+            worker_loads[w] += cu_len
+
+        fp = str(file_path)
+        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+            futures = [
+                pool.submit(_process_cu_chunk, fp, frozenset(offsets))
+                for offsets in worker_offsets
+                if offsets
+            ]
+            for fut in futures:
+                c_name, c_die, c_loc = fut.result()
+                for k, v in c_name.items():
+                    if k not in name_map:
+                        name_map[k] = v
+                for k, v in c_die.items():
+                    if k not in die_addr_map:
+                        die_addr_map[k] = v
+                for k, v in c_loc.items():
+                    if k not in addr_to_loc:
+                        addr_to_loc[k] = v
+        raw_addrs = sorted(addr_to_loc)
+        sorted_addrs = array.array("Q", raw_addrs)
+        sorted_locs = [addr_to_loc[a] for a in raw_addrs]
+        return name_map, die_addr_map, sorted_addrs, sorted_locs
 
     _DIE_TAGS = {"DW_TAG_variable", "DW_TAG_subprogram"}
 
@@ -138,25 +317,31 @@ def _build_dwarf_maps(elf: ELFFile) -> tuple[dict[str, str], dict[int, str], lis
             # cached for the remainder of this CU's DIE walk + line program.
             _file_cache: dict[int, str] = {}
 
-            def _resolve_file(file_idx: int) -> str:
-                if file_idx in _file_cache:
-                    return _file_cache[file_idx]
-                if file_idx == 0 or file_idx > len(file_entries):
-                    _file_cache[file_idx] = ""
+            def _resolve_file(
+                file_idx: int,
+                _cache: dict = _file_cache,
+                _entries: list = file_entries,
+                _dirs: list = inc_dirs,
+                _comp_dir: str = comp_dir_str,
+            ) -> str:
+                if file_idx in _cache:
+                    return _cache[file_idx]
+                if file_idx == 0 or file_idx > len(_entries):
+                    _cache[file_idx] = ""
                     return ""
-                entry = file_entries[file_idx - 1]
+                entry = _entries[file_idx - 1]
                 name = _decode(entry.name)
                 dir_idx = entry.dir_index
                 if dir_idx == 0:
-                    base = comp_dir_str
-                elif dir_idx <= len(inc_dirs):
-                    base = _decode(inc_dirs[dir_idx - 1])
+                    base = _comp_dir
+                elif dir_idx <= len(_dirs):
+                    base = _decode(_dirs[dir_idx - 1])
                 else:
-                    base = comp_dir_str
+                    base = _comp_dir
                 full = f"{base}/{name}" if base else name
-                if comp_dir_str and full.startswith(comp_dir_str):
-                    full = full[len(comp_dir_str):].lstrip("/")
-                _file_cache[file_idx] = full
+                if _comp_dir and full.startswith(_comp_dir):
+                    full = full[len(_comp_dir):].lstrip("/")
+                _cache[file_idx] = full
                 return full
 
             # -- Iterative DIE walk ----------------------------------------
@@ -428,7 +613,7 @@ def parse(elf_file: Path) -> MemoryMap:
         e_flags = elf.header.get("e_flags", 0)
 
         # Build DWARF lookup maps (name, die-address, line-program)
-        dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs = _build_dwarf_maps(elf)
+        dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs = _build_dwarf_maps(elf, elf_file)
 
         # Collect symbol table
         symbols_by_section_idx: dict[int, list[Symbol]] = {}

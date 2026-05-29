@@ -8,4 +8,5 @@ dj-database-url>=2.1
 psycopg2-binary>=2.9   # swap for psycopg2 (no binary) in production for better performance
 whitenoise>=6.6        # serves static files without a separate nginx/CDN
 gunicorn>=21.0         # production WSGI server
+modal>=0.73            # serverless ELF parsing
 # memprobe library — install from sibling directory: pip install -e ../memprobe

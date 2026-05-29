@@ -278,27 +278,43 @@ def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None) -> tuple[d
             worker_loads[w] += cu_len
 
         fp = str(file_path)
-        with ProcessPoolExecutor(max_workers=n_workers) as pool:
-            futures = [
-                pool.submit(_process_cu_chunk, fp, frozenset(offsets))
-                for offsets in worker_offsets
-                if offsets
-            ]
-            for fut in futures:
-                c_name, c_die, c_loc = fut.result()
-                for k, v in c_name.items():
-                    if k not in name_map:
-                        name_map[k] = v
-                for k, v in c_die.items():
-                    if k not in die_addr_map:
-                        die_addr_map[k] = v
-                for k, v in c_loc.items():
-                    if k not in addr_to_loc:
-                        addr_to_loc[k] = v
-        raw_addrs = sorted(addr_to_loc)
-        sorted_addrs = array.array("Q", raw_addrs)
-        sorted_locs = [addr_to_loc[a] for a in raw_addrs]
-        return name_map, die_addr_map, sorted_addrs, sorted_locs
+        parallel_ok = False
+        try:
+            with ProcessPoolExecutor(max_workers=n_workers) as pool:
+                futures = [
+                    pool.submit(_process_cu_chunk, fp, frozenset(offsets))
+                    for offsets in worker_offsets
+                    if offsets
+                ]
+                for fut in futures:
+                    c_name, c_die, c_loc = fut.result()
+                    for k, v in c_name.items():
+                        if k not in name_map:
+                            name_map[k] = v
+                    for k, v in c_die.items():
+                        if k not in die_addr_map:
+                            die_addr_map[k] = v
+                    for k, v in c_loc.items():
+                        if k not in addr_to_loc:
+                            addr_to_loc[k] = v
+            parallel_ok = True
+        except Exception:
+            # Process forking not supported in this environment — fall through
+            # to the sequential path below.
+            import traceback as _tb
+            import sys as _sys
+            print(f"[memprobe] parallel DWARF parse failed, falling back to sequential: "
+                  f"{_tb.format_exc()}", file=_sys.stderr)
+            name_map.clear()
+            die_addr_map.clear()
+            addr_to_loc.clear()
+
+        if parallel_ok:
+            raw_addrs = sorted(addr_to_loc)
+            sorted_addrs = array.array("Q", raw_addrs)
+            sorted_locs = [addr_to_loc[a] for a in raw_addrs]
+            return name_map, die_addr_map, sorted_addrs, sorted_locs
+        # else: fall through to sequential path below
 
     _DIE_TAGS = {"DW_TAG_variable", "DW_TAG_subprogram"}
 

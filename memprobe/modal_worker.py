@@ -41,6 +41,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "pyelftools>=0.29",
+        "capstone>=4.0",
         "click>=8.0",
         "rich>=13.0",
         "jinja2>=3.1",
@@ -246,6 +247,7 @@ def _mmap_to_dict(mmap) -> dict:
         "sections": sections,
         "regions": regions,
         "binary_info": mmap.binary_info or {},
+        "call_graph": mmap.call_graph or {},
     }
 
 

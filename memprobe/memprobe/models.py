@@ -63,6 +63,9 @@ class MemoryMap:
     build_id: Optional[str] = None
     timestamp: Optional[str] = None
     binary_info: Optional[dict] = None
+    # call_graph[func_name] = {"calls": [...], "called_by": [...]}
+    # Only populated for ELF files; None when unavailable.
+    call_graph: Optional[dict] = None
 
     @property
     def total_flash(self) -> int:

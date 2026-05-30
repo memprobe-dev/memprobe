@@ -31,7 +31,8 @@ function _expBuildPayload(parts) {
   if (parts.includes('warnings'))  out.warnings  = _lastAnalysis.warnings  || [];
   if (parts.includes('insights'))  out.insights  = _lastAnalysis.insights  || {};
   if (parts.includes('libraries')) out.libraries = _lastAnalysis.libraries || [];
-  if (parts.includes('treemap'))   out.treemap   = _lastAnalysis.treemap   || {};
+  if (parts.includes('treemap'))    out.treemap    = _lastAnalysis.treemap    || {};
+  if (parts.includes('call_graph')) out.call_graph = _lastAnalysis.call_graph || {};
   return out;
 }
 
@@ -162,6 +163,14 @@ function _expCollectCSVFiles(data) {
   tryAdd('regions', data.regions);
   tryAdd('warnings', data.warnings);
   tryAdd('libraries', data.libraries);
+  if (data.call_graph && typeof data.call_graph === 'object') {
+    const rows = Object.entries(data.call_graph).map(([fn, e]) => ({
+      function:  fn,
+      calls:     (e.calls     || []).join(';'),
+      called_by: (e.called_by || []).join(';'),
+    }));
+    if (rows.length) files.push({ name: 'call_graph.csv', content: _expArrayToCSV(rows) });
+  }
   // Scalar/object-only data goes into meta.csv as key,value rows
   const scalar = {};
   for (const [k, v] of Object.entries(data)) {

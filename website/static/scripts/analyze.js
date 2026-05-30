@@ -459,8 +459,14 @@ function renderResults(d, histBuildId) {
 
   if (d.insights) renderInsights(d.insights, d.warnings || [], d.binary_info || {});
   renderLibraries(d.libraries || []);
+  if (typeof initCallGraph === 'function') initCallGraph(d);
 
   SYMS = d.symbols;
+  const symDwarfNotice = document.getElementById('sym-dwarf-notice');
+  if (symDwarfNotice) {
+    const hasSource = SYMS.some(s => s.source_location);
+    symDwarfNotice.style.display = hasSource ? 'none' : '';
+  }
   const secSel = document.getElementById('tbl-sec');
   secSel.innerHTML = '<option value="">All sections</option>';
   [...new Set(SYMS.map(s=>s.section))].sort().forEach(n => {

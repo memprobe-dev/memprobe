@@ -4,10 +4,12 @@ import array
 import bisect
 import gc
 import re
+import sys
 import zlib
+from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
@@ -623,6 +625,298 @@ def _find_duplicate_strings(elf: ELFFile) -> list[dict]:
     return results[:40]
 
 
+# ---------------------------------------------------------------------------
+# Call graph
+# ---------------------------------------------------------------------------
+
+# Capstone architecture/mode constants mapped from ELF e_machine values.
+# Populated lazily on first use so importing this module never requires capstone.
+_CS_ARCH_MAP: dict[str, tuple] = {
+    # (CS_ARCH, CS_MODE)
+    "EM_386":    ("CS_ARCH_X86",   "CS_MODE_32"),
+    "EM_X86_64": ("CS_ARCH_X86",   "CS_MODE_64"),
+    "EM_AARCH64":("CS_ARCH_ARM64", "CS_MODE_ARM"),
+    "EM_MIPS":   ("CS_ARCH_MIPS",  "CS_MODE_MIPS32"),
+    "EM_PPC":    ("CS_ARCH_PPC",   "CS_MODE_32"),
+    "EM_RISCV":  ("CS_ARCH_RISCV", "CS_MODE_RISCV32"),
+}
+
+# Mnemonic prefixes that represent direct function calls for each architecture.
+_CALL_MNEMONICS: dict[str, frozenset] = {
+    "EM_386":    frozenset({"call"}),
+    "EM_X86_64": frozenset({"call"}),
+    "EM_ARM":    frozenset({"bl", "blx", "blxns"}),
+    "EM_AARCH64":frozenset({"bl", "blr"}),
+    "EM_MIPS":   frozenset({"jal", "jalr"}),
+    "EM_PPC":    frozenset({"bl", "bla", "blrl"}),
+    "EM_RISCV":  frozenset({"jal", "jalr"}),
+    "EM_XTENSA": frozenset({"call0", "call4", "call8", "call12", "callx0",
+                             "callx4", "callx8", "callx12"}),
+}
+
+
+def _dwarf5_call_graph(elf: ELFFile, addr_to_name: dict[int, str]) -> Optional[dict[str, set[str]]]:
+    """Extract caller->callee edges from DWARF 5 DW_TAG_call_site DIEs.
+
+    Returns a dict of {caller_name: {callee_name, ...}} if DWARF 5 call
+    site info is present, or None if not available (DWARF < 5 or no info).
+    """
+    if not elf.has_dwarf_info():
+        return None
+
+    dwarf = elf.get_dwarf_info()
+    # DW_TAG_call_site was introduced in DWARF 5.
+    # pyelftools exposes it as the string "DW_TAG_call_site".
+    calls: dict[str, set[str]] = defaultdict(set)
+    found_any = False
+
+    try:
+        for cu in dwarf.iter_CUs():
+            cu_base = cu.cu_offset
+
+            # Pass 1: build a DIE absolute-offset -> name map for this CU.
+            # DW_AT_call_origin / DW_AT_abstract_origin values are CU-relative
+            # offsets (DW_FORM_ref*), so the absolute offset is cu_base + ref.
+            # Keying die_names by die.offset (absolute) means we look up with
+            # cu_base + ref to match correctly.
+            die_names: dict[int, str] = {}
+            for die in cu.iter_DIEs():
+                if die.tag in ("DW_TAG_subprogram", "DW_TAG_subroutine_type"):
+                    lnk = die.attributes.get("DW_AT_linkage_name")
+                    name = _decode(lnk.value) if lnk else None
+                    if not name:
+                        nm = die.attributes.get("DW_AT_name")
+                        name = _decode(nm.value) if nm else None
+                    if name:
+                        die_names[die.offset] = name
+
+            # Pass 2: walk subprograms and look for call_site children.
+            for die in cu.iter_DIEs():
+                if die.tag != "DW_TAG_subprogram":
+                    continue
+                lnk = die.attributes.get("DW_AT_linkage_name")
+                caller = _decode(lnk.value) if lnk else None
+                if not caller:
+                    nm = die.attributes.get("DW_AT_name")
+                    caller = _decode(nm.value) if nm else None
+                if not caller:
+                    continue
+
+                for child in die.iter_children():
+                    if child.tag != "DW_TAG_call_site":
+                        continue
+                    found_any = True
+                    callee = None
+
+                    # DW_AT_call_origin: CU-relative ref to the callee's DIE.
+                    orig = child.attributes.get("DW_AT_call_origin")
+                    if orig is not None:
+                        callee = die_names.get(cu_base + int(orig.value))
+
+                    # DW_AT_abstract_origin: used for inlined call sites.
+                    if callee is None:
+                        abst = child.attributes.get("DW_AT_abstract_origin")
+                        if abst is not None:
+                            callee = die_names.get(cu_base + int(abst.value))
+
+                    if callee and callee != caller:
+                        calls[caller].add(callee)
+    except Exception as exc:
+        print(f"[memprobe] DWARF 5 call graph extraction failed: {exc}", file=sys.stderr)
+        return None
+
+    return dict(calls) if found_any else None
+
+
+def _capstone_call_graph(
+    elf: ELFFile,
+    arch_tag: str,
+    func_symbols: list,
+    addr_to_name: dict[int, str],
+) -> dict[str, set[str]]:
+    """Extract caller->callee edges by disassembling each function with capstone.
+
+    Only resolves direct calls (immediate branch targets). Indirect calls
+    through function pointers or vtables are not captured, which is expected
+    for this kind of static analysis.
+
+    Raises ImportError if capstone is not installed.
+    Raises ValueError if the architecture is not supported.
+    """
+    import capstone  # noqa: PLC0415
+
+    call_mnemonics = _CALL_MNEMONICS.get(arch_tag, frozenset())
+    if not call_mnemonics:
+        raise ValueError(f"Call graph disassembly not supported for {arch_tag}")
+
+    # Build a section data cache: section index -> (base_addr, bytes)
+    sec_cache: dict[int, tuple[int, bytes]] = {}
+    for i, sec in enumerate(elf.iter_sections()):
+        if sec["sh_type"] in ("SHT_PROGBITS",) and sec["sh_flags"] & 0x4:  # SHF_EXECINSTR
+            try:
+                sec_cache[i] = (sec["sh_addr"], sec.data())
+            except Exception:
+                pass
+
+    # Also build addr->section data for fast offset lookup.
+    # Sorted by base address for binary search.
+    sec_ranges: list[tuple[int, int, bytes]] = sorted(
+        (base, base + len(data), data)
+        for base, data in sec_cache.values()
+    )
+
+    def _get_func_bytes(addr: int, size: int) -> Optional[bytes]:
+        """Extract raw bytes for a function from the loaded section data."""
+        real_addr = addr & ~1  # strip ARM THUMB bit
+        for base, end, data in sec_ranges:
+            if base <= real_addr < end:
+                off = real_addr - base
+                return data[off: off + size]
+        return None
+
+    # Determine capstone arch/mode.
+    if arch_tag == "EM_ARM":
+        cs_arch = capstone.CS_ARCH_ARM
+        # We'll set mode per-function based on the THUMB bit.
+        cs_thumb = capstone.Cs(cs_arch, capstone.CS_MODE_THUMB)
+        cs_arm   = capstone.Cs(cs_arch, capstone.CS_MODE_ARM)
+        cs_thumb.detail = True
+        cs_arm.detail   = True
+        cs_instances = None  # handled specially below
+    elif arch_tag == "EM_XTENSA":
+        # Xtensa support added in capstone 5; skip gracefully if unavailable.
+        if not hasattr(capstone, "CS_ARCH_XTENSA"):
+            raise ValueError("capstone 5+ required for Xtensa call graph")
+        cs_main = capstone.Cs(capstone.CS_ARCH_XTENSA, capstone.CS_MODE_LITTLE_ENDIAN)
+        cs_main.detail = True
+        cs_instances = cs_main
+    else:
+        arch_str, mode_str = _CS_ARCH_MAP.get(arch_tag, (None, None))
+        if arch_str is None:
+            raise ValueError(f"No capstone mapping for {arch_tag}")
+        cs_main = capstone.Cs(getattr(capstone, arch_str), getattr(capstone, mode_str))
+        cs_main.detail = True
+        cs_instances = cs_main
+
+    calls: dict[str, set[str]] = defaultdict(set)
+    # Cap per-function size to avoid spending too long on large functions.
+    MAX_FUNC_BYTES = 64 * 1024
+
+    for sym in func_symbols:
+        if sym.size <= 0 or sym.size > MAX_FUNC_BYTES:
+            continue
+        func_bytes = _get_func_bytes(sym.address, sym.size)
+        if not func_bytes:
+            continue
+
+        real_addr = sym.address & ~1
+
+        if arch_tag == "EM_ARM":
+            is_thumb = bool(sym.address & 1)
+            cs = cs_thumb if is_thumb else cs_arm
+        else:
+            cs = cs_instances  # type: ignore[assignment]
+
+        try:
+            for insn in cs.disasm(func_bytes, real_addr):
+                if insn.mnemonic.lower() not in call_mnemonics:
+                    continue
+                # Extract the immediate branch target from the operand string.
+                # Capstone encodes it as a hex literal in the op_str.
+                op = insn.op_str.strip()
+                target_addr: Optional[int] = None
+                try:
+                    if op.startswith("#"):
+                        op = op[1:]
+                    target_addr = int(op, 16)
+                except ValueError:
+                    # Indirect call (register operand) — skip.
+                    continue
+
+                if target_addr is None:
+                    continue
+                callee_name = addr_to_name.get(target_addr & ~1)
+                if callee_name and callee_name != sym.name:
+                    calls[sym.name].add(callee_name)
+        except Exception:
+            # Disassembly failure on one function should not abort the whole graph.
+            continue
+
+    return dict(calls)
+
+
+def _build_call_graph(
+    elf: ELFFile,
+    arch_tag: str,
+    func_symbols: list,
+) -> Optional[dict[str, dict[str, list[str]]]]:
+    """Build a call graph for all functions in the ELF.
+
+    Returns a dict: {func_name: {"calls": [...], "called_by": [...]}}
+    Only functions with at least one call relationship are included.
+
+    Returns None if no call information could be extracted.
+
+    Strategy (in order):
+      1. DWARF 5 DW_TAG_call_site — zero extra dependencies, covers modern
+         toolchains (GCC 8+/Clang 7+ with -gdwarf-5).
+      2. capstone disassembly fallback — covers everything else, requires the
+         capstone package to be installed.
+    """
+    # Build addr -> symbol name map. For ARM strip the THUMB bit so lookups
+    # work regardless of whether the caller uses the raw or masked address.
+    addr_to_name: dict[int, str] = {}
+    for sym in func_symbols:
+        real_addr = sym.address & ~1 if arch_tag == "EM_ARM" else sym.address
+        if sym.name and sym.size > 0:
+            addr_to_name[real_addr] = sym.name
+
+    calls_forward: Optional[dict[str, set[str]]] = None
+    method_used = "none"
+
+    # --- Strategy 1: DWARF 5 call sites ---
+    dwarf_result = _dwarf5_call_graph(elf, addr_to_name)
+    if dwarf_result is not None:
+        calls_forward = dwarf_result
+        method_used = "dwarf5"
+
+    # --- Strategy 2: capstone disassembly ---
+    if calls_forward is None:
+        try:
+            calls_forward = _capstone_call_graph(elf, arch_tag, func_symbols, addr_to_name)
+            method_used = "capstone"
+        except ImportError:
+            print("[memprobe] capstone not installed — call graph unavailable", file=sys.stderr)
+            return None
+        except ValueError as exc:
+            print(f"[memprobe] call graph: {exc}", file=sys.stderr)
+            return None
+        except Exception as exc:
+            print(f"[memprobe] call graph disassembly failed: {exc}", file=sys.stderr)
+            return None
+
+    if not calls_forward:
+        return None
+
+    # Build reverse edges.
+    called_by: dict[str, set[str]] = defaultdict(set)
+    for caller, callees in calls_forward.items():
+        for callee in callees:
+            called_by[callee].add(caller)
+
+    # Merge into final structure; include every function that has at least one edge.
+    all_funcs = set(calls_forward.keys()) | set(called_by.keys())
+    result: dict[str, dict[str, list[str]]] = {}
+    for func in sorted(all_funcs):
+        result[func] = {
+            "calls":     sorted(calls_forward.get(func, set())),
+            "called_by": sorted(called_by.get(func, set())),
+        }
+
+    print(f"[memprobe] call graph: {len(result)} functions, method={method_used}", file=sys.stderr)
+    return result
+
+
 def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
     """Parse an ELF binary into a MemoryMap.
 
@@ -787,6 +1081,30 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
         }
         elf_type = elf_type_names.get(elf.header["e_type"], elf.header["e_type"])
 
+        _emit(0.88, "call_graph")
+        # Collect executable section names via SHF_EXECINSTR (0x4) flag.
+        # This is architecture-agnostic and avoids hardcoding section prefixes.
+        _SHF_EXECINSTR = 0x4
+        exec_sections: set[str] = {
+            sec.name
+            for sec in elf.iter_sections()
+            if sec["sh_flags"] & _SHF_EXECINSTR
+        }
+        func_symbols_for_cg = [
+            sym
+            for sym in (s for sec in sections for s in sec.symbols)
+            if sym.size > 0 and sym.section in exec_sections
+        ]
+        call_graph = None
+        try:
+            print(f"[memprobe] building call graph: arch={arch_tag}, func_symbols={len(func_symbols_for_cg)}", file=sys.stderr)
+            call_graph = _build_call_graph(elf, arch_tag, func_symbols_for_cg)
+            print(f"[memprobe] call graph result: {len(call_graph) if call_graph else None}", file=sys.stderr)
+        except Exception as exc:
+            import traceback
+            print(f"[memprobe] call graph failed: {exc}\n{traceback.format_exc()}", file=sys.stderr)
+        _emit(0.92, "call_graph_done")
+
         duplicate_strings = _find_duplicate_strings(elf)
         build_stamps = _find_build_stamps(elf)
         ota_estimate = _estimate_ota_size(elf)
@@ -817,4 +1135,5 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
             target=arch_human,
             sections=sections,
             binary_info=binary_info,
+            call_graph=call_graph,
         )

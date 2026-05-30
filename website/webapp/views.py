@@ -320,6 +320,7 @@ def _mmap_to_json(mmap, warnings) -> dict:
         'treemap': _build_treemap_data(mmap),
         'binary_info': mmap.binary_info or {},
         'insights': compute_insights(mmap),
+        'call_graph': mmap.call_graph or {},
         'libraries': [
             {
                 'name': lib.name,
@@ -535,6 +536,7 @@ def _mmap_from_modal(data: dict, filename: str) -> MemoryMap:
         sections=sections,
         regions=regions,
         binary_info=data.get('binary_info') or None,
+        call_graph=data.get('call_graph') or None,
     )
 
 
@@ -890,22 +892,38 @@ def _run_analysis_job(job_id: str, file_bytes: bytes, filename: str,
         job.status = AnalysisJob.STATUS_RUNNING
         job.save(update_fields=['status', 'updated_at'])
 
-        if _USE_MODAL:
-            def _on_progress(frac: float, stage: str):
-                try:
-                    AnalysisJob.objects.filter(job_id=job_id).update(progress=round(frac, 3))
-                except Exception:
-                    pass  # progress updates are best-effort
+        def _on_progress(frac: float, stage: str = ''):
+            try:
+                AnalysisJob.objects.filter(job_id=job_id).update(progress=round(frac, 3))
+            except Exception:
+                pass  # progress updates are best-effort
 
+        if _USE_MODAL:
             mmap = _analyze_via_modal(file_bytes, filename, file_size, on_progress=_on_progress)
         else:
-            import io
-            from django.core.files.uploadedfile import InMemoryUploadedFile
-            fake_file = InMemoryUploadedFile(
-                io.BytesIO(file_bytes), 'file', filename,
-                'application/octet-stream', len(file_bytes), None,
-            )
-            mmap = _load_upload(fake_file)
+            # Local compute: write to a temp file and parse directly so the
+            # progress callback works and we avoid the InMemoryUploadedFile detour.
+            suffix = Path(filename).suffix.lower()
+            if suffix not in _SUPPORTED:
+                raise ValueError(f"Unsupported file type '{suffix}'. Supported: {', '.join(_SUPPORTED)}")
+            if file_size > MAX_UPLOAD_BYTES:
+                raise ValueError(f"File too large ({file_size // (1024*1024)} MB). Maximum is 30 MB.")
+
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = Path(tmp.name)
+            try:
+                if suffix == '.map':
+                    header = file_bytes[:4096]
+                    if detect_iar(header):
+                        mmap = map_iar.parse(tmp_path)
+                    else:
+                        mmap = map_gcc.parse(tmp_path)
+                    _on_progress(1.0)
+                else:
+                    mmap = elf_parser.parse(tmp_path, progress_cb=_on_progress)
+            finally:
+                tmp_path.unlink(missing_ok=True)
 
         mmap.source_file = filename
         warnings = bloat_analyze(mmap)

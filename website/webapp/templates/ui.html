@@ -218,8 +218,9 @@
       {% if is_authenticated %}
       <button class="atab-btn" onclick="showAnalysisTab('treemap',this)">Treemap</button>
       <button class="atab-btn" onclick="showAnalysisTab('symbols',this)">Symbols</button>
+      <button class="atab-btn" id="atab-callgraph-btn" onclick="showAnalysisTab('callgraph',this)">Call graph <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;vertical-align:middle">Pro</span></button>
       <button class="atab-btn" id="atab-insights-btn" onclick="showAnalysisTab('insights',this)">Insights <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;vertical-align:middle">Pro</span></button>
-      <button class="atab-btn" onclick="showAnalysisTab('export',this)">Export &amp; share</button>
+      <button class="atab-btn" onclick="showAnalysisTab('export',this)">Export &amp; share <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;vertical-align:middle">Pro</span></button>
       {% endif %}
     </div>
 
@@ -281,6 +282,16 @@
 
     <!-- Tab: Symbols -->
     <div class="atab-panel" id="atab-symbols">
+      <div id="sym-dwarf-notice" class="dwarf-required" style="display:none">
+        <div class="dwarf-required-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <div class="dwarf-required-body">
+          <div class="dwarf-required-title">Source locations unavailable</div>
+          <div class="dwarf-required-desc">The Source column is empty because no DWARF debug info was found. Recompile with <code>-g</code> (any DWARF version) to see which source file and line each symbol came from.</div>
+          <div class="dwarf-required-flags"><code>-g</code><span class="dwarf-required-sep">·</span>GCC or Clang</div>
+        </div>
+      </div>
       <div class="card">
         <div class="card-hd">
           <span class="card-title">Symbol table</span>
@@ -342,6 +353,106 @@
         <div id="insights-body"></div>
       </div>
     </div><!-- /atab-insights -->
+
+    <!-- Tab: Call graph -->
+    <div class="atab-panel" id="atab-callgraph">
+      <div class="card">
+        <div class="card-hd">
+          <span class="card-title">Call graph</span>
+          <span class="cg-summary-badge" id="cg-summary"></span>
+        </div>
+
+        <!-- Search -->
+        <div class="cg-search-wrap">
+          <div class="cg-search-box">
+            <svg class="cg-search-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input class="cg-search" id="cg-search" type="text" placeholder="Search function…" oninput="cgSearch(this.value)" autocomplete="off" spellcheck="false">
+            <button class="cg-clear" id="cg-clear" onclick="cgClear()" title="Clear" style="display:none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div id="cg-suggestions" class="cg-suggestions" style="display:none"></div>
+        </div>
+
+        <!-- Empty / no-data states -->
+        <div id="cg-empty" class="cg-state-msg" style="display:none">No match. Try a partial name.</div>
+        <div id="cg-no-data" class="dwarf-required" style="display:none">
+          <div class="dwarf-required-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="dwarf-required-body">
+            <div class="dwarf-required-title">DWARF 5 debug info required</div>
+            <div class="dwarf-required-desc">Call graph analysis reads <code>DW_TAG_call_site</code> entries from DWARF 5 debug info. Recompile your firmware with:</div>
+            <div class="dwarf-required-flags">
+              <code>-g -gdwarf-5</code>
+              <span class="dwarf-required-sep">·</span>
+              GCC 8+ or Clang 14+
+            </div>
+          </div>
+        </div>
+
+        <!-- Entry points panel (root functions — shown before any search) -->
+        <div id="cg-entrypoints" class="cg-entrypoints" style="display:none">
+          <div class="cg-ep-header">
+            <span class="cg-ep-label">Entry points</span>
+            <span class="cg-ep-count" id="cg-ep-count"></span>
+          </div>
+          <div class="cg-ep-list" id="cg-ep-list"></div>
+        </div>
+
+        <!-- Result panel -->
+        <div id="cg-result" class="cg-result" style="display:none">
+
+          <!-- Nav bar: back + breadcrumb -->
+          <div class="cg-nav">
+            <button class="cg-back-btn" id="cg-back" onclick="cgBack()" title="Back" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <div class="cg-breadcrumb" id="cg-breadcrumb"></div>
+          </div>
+
+          <!-- Function header -->
+          <div class="cg-func-header">
+            <code class="cg-func-name" id="cg-func-name"></code>
+            <button class="cg-copy-btn" id="cg-copy-btn" onclick="cgCopyName()" title="Copy name">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span class="cg-copy-label">Copy</span>
+            </button>
+          </div>
+
+          <!-- Stats + graph -->
+          <div class="cg-stats-row">
+            <span class="cg-stat-pill cg-stat-calledby"><span id="cg-stat-calledby">0</span> callers</span>
+            <span class="cg-stat-pill cg-stat-calls"><span id="cg-stat-calls">0</span> callees</span>
+          </div>
+          <div class="cg-graph-wrap">
+            <svg id="cg-graph" class="cg-graph"></svg>
+          </div>
+
+          <!-- Two-column lists -->
+          <div class="cg-cols">
+            <div class="cg-col">
+              <div class="cg-col-header">
+                <span class="cg-col-title">Calls</span>
+                <span class="cg-count-badge" id="cg-calls-count"></span>
+              </div>
+              <input class="cg-list-filter" id="cg-calls-filter" type="text" placeholder="Filter…" oninput="cgFilterList('calls')" style="display:none">
+              <ul class="cg-list" id="cg-calls-list"></ul>
+            </div>
+            <div class="cg-col">
+              <div class="cg-col-header">
+                <span class="cg-col-title">Called by</span>
+                <span class="cg-count-badge" id="cg-calledby-count"></span>
+              </div>
+              <input class="cg-list-filter" id="cg-calledby-filter" type="text" placeholder="Filter…" oninput="cgFilterList('calledby')" style="display:none">
+              <ul class="cg-list" id="cg-calledby-list"></ul>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /atab-callgraph -->
+
     <div class="addr-tooltip" id="addr-tooltip"></div>
 
     {% if is_authenticated %}
@@ -378,6 +489,9 @@
             <label style="display:inline-flex;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer">
               <input type="checkbox" class="exp-part" value="treemap" style="accent-color:var(--accent);cursor:pointer"> Treemap data
             </label>
+            <label style="display:none;align-items:center;gap:7px;padding:8px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer" id="exp-callgraph-label">
+              <input type="checkbox" class="exp-part" value="call_graph" style="accent-color:var(--accent);cursor:pointer"> Call graph
+            </label>
           </div>
           <div style="font-size:12px;margin-bottom:22px">
             <button onclick="exportSelectAll(true)" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0;font-family:inherit">Select all</button>
@@ -388,16 +502,16 @@
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Format</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
-              <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+              <input type="radio" name="exp-fmt" value="json" checked style="accent-color:var(--accent);cursor:pointer"> JSON <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.json</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
-              <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+              <input type="radio" name="exp-fmt" value="toml" style="accent-color:var(--accent);cursor:pointer"> TOML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.toml</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
-              <input type="radio" name="exp-fmt" value="csv" style="accent-color:var(--accent);cursor:pointer"> CSV <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+              <input type="radio" name="exp-fmt" value="csv" style="accent-color:var(--accent);cursor:pointer"> CSV <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.csv / .zip</span>
             </label>
             <label style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;font-weight:600">
-              <input type="radio" name="exp-fmt" value="xml" style="accent-color:var(--accent);cursor:pointer"> XML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.xml</span> <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em">Pro</span>
+              <input type="radio" name="exp-fmt" value="xml" style="accent-color:var(--accent);cursor:pointer"> XML <span style="color:var(--text3);font-weight:400;font-family:var(--mono);font-size:11px">.xml</span>
             </label>
           </div>
 
@@ -416,7 +530,6 @@
       <div class="card">
         <div class="card-hd">
           <span class="card-title">Share a read-only link</span>
-          <span style="font-size:10px;font-weight:700;background:var(--bg4);color:var(--text3);border:1px solid var(--border2);border-radius:4px;padding:1px 5px;letter-spacing:.04em;margin-left:8px">Pro</span>
         </div>
         <div style="padding:20px">
           <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:14px">
@@ -676,6 +789,7 @@ const _MAX_PROJECTS = {{ max_projects }};
 <script src="/static/scripts/treemap.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/symbols.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/insights.js?v={{ asset_version }}"></script>
+<script src="/static/scripts/callgraph.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/history.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/trend.js?v={{ asset_version }}"></script>
 <script src="/static/scripts/compare.js?v={{ asset_version }}"></script>

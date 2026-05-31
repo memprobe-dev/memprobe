@@ -4,6 +4,22 @@
 // 0x3c000000 and IROM at 0x42000000, ~96 MB apart) from collapsing every segment
 // into an invisible sliver next to one dominant hatched gap. Each returned cluster
 // is { secs, minAddr, maxAddr } with secs sorted by address.
+// Sections drawn on the flash ruler run in-place (text + rodata); their LMA
+// equals their VMA. .data is included when it carries a distinct load address.
+const _FLASH_TYPES = new Set(['text', 'rodata']);
+// Sections drawn on the RAM ruler, all addressed by VMA.
+const _RAM_TYPES = new Set(['bss', 'data', 'heap', 'stack']);
+
+// A section ships bytes to flash when it stores image content (occupies_file)
+// at a real load address. .data is initialized from a flash copy at a distinct
+// LMA, so it belongs here too; when the ELF reports no separate load address
+// (lma == vma) we cannot place .data's flash copy, so we leave it off rather
+// than draw it at a RAM address. NOBITS reservations never ship bytes.
+function isFlashSection(s) {
+  return s.size > 0 && s.lma > 0 && s.occupies_file !== false &&
+    (_FLASH_TYPES.has(s.type) || (s.type === 'data' && s.lma !== s.vma));
+}
+
 function clusterSections(secsRaw, addrFn) {
   const sorted = secsRaw.slice().sort((a, b) => addrFn(a) - addrFn(b));
   if (!sorted.length) return [];
@@ -36,18 +52,10 @@ function renderAddrMap(sections) {
   const card = document.getElementById('card-addrmap');
   const body = document.getElementById('addrmap-body');
 
-  // Flash ruler: only text + rodata - these always run in-place from flash,
-  // so their VMA IS their flash address. We deliberately exclude 'data' because
-  // on most embedded targets p_paddr == p_vaddr in the ELF (the bootloader
-  // handles the copy), so we cannot recover a reliable flash LMA for .data
-  // from the ELF alone - showing it at its RAM VMA in the flash ruler would
-  // be wrong.
-  const FLASH_TYPES = new Set(['text', 'rodata']);
-  // RAM ruler: data + bss + heap + stack - all live at their VMA (RAM address).
-  const RAM_TYPES   = new Set(['bss', 'data', 'heap', 'stack']);
-
-  const flashSecs = sections.filter(s => FLASH_TYPES.has(s.type) && s.vma > 0 && s.size > 0);
-  const ramSecs   = sections.filter(s => RAM_TYPES.has(s.type)   && s.vma > 0 && s.size > 0);
+  // Flash ruler placed at LMA, RAM ruler at VMA. See isFlashSection for the
+  // rationale on what counts as flash (and why .data may appear on both rulers).
+  const flashSecs = sections.filter(isFlashSection);
+  const ramSecs   = sections.filter(s => _RAM_TYPES.has(s.type) && s.vma > 0 && s.size > 0);
 
   if (!flashSecs.length && !ramSecs.length) {
     card.style.display = 'none';
@@ -123,10 +131,10 @@ function renderAddrMap(sections) {
   }
 
   let html = '<div class="addr-ruler-wrap">';
-  if (flashSecs.length) html += buildRuler('FLASH', flashSecs, s => s.vma);
+  if (flashSecs.length) html += buildRuler('FLASH', flashSecs, s => s.lma);
   if (ramSecs.length)   html += buildRuler('RAM',   ramSecs,   s => s.vma);
   html += '</div>';
-  html += `<p style="font-size:10px;color:var(--text3);margin:8px 0 0">Hover a segment for details. Hatched areas are gaps; a slashed break marks a large jump in the address space.</p>`;
+  html += `<p style="font-size:10px;color:var(--text3);margin:8px 0 0">Hover a segment for details. Hatched areas are gaps; a slashed break marks a large jump in the address space. FLASH is drawn at each section's load address, RAM at its runtime address. A section initialized from flash (e.g. .data) only appears on the FLASH ruler when the ELF records a separate load address; when it does not, its flash copy cannot be located from the ELF alone and is shown on RAM only.</p>`;
 
   body.innerHTML = html;
 }
@@ -151,5 +159,5 @@ function addrTipHide() {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { clusterSections };
+  module.exports = { clusterSections, isFlashSection };
 }

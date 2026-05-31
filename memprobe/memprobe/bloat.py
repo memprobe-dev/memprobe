@@ -44,7 +44,7 @@ def analyze(mmap: MemoryMap) -> list[BloatWarning]:
     if found_asan:
         warnings.append(BloatWarning(
             level="warning",
-            message=f"ASan is linked ({found_asan}). Will fault on hardware. Shadow memory does not exist on bare metal.",
+            message=f"ASan runtime is linked ({found_asan}). On a bare-metal target it will fault: the shadow memory and fault handlers it needs do not exist there.",
             symbol=found_asan,
             how_to_fix="Remove -fsanitize=address from CFLAGS/CXXFLAGS.",
         ))
@@ -133,7 +133,7 @@ def analyze(mmap: MemoryMap) -> list[BloatWarning]:
     # having global ctors is normal in C++ code; the count is purely informational.
     init_sec = next((s for s in mmap.sections if s.name in (".init_array", ".ctors")), None)
     if init_sec and init_sec.size > 0:
-        ptr_size = 8 if any(s.size > 0xFFFFFFFF for s in symbols) else 4
+        ptr_size = 8 if (mmap.binary_info or {}).get("bitness") == 64 else 4
         ctor_count = init_sec.size // ptr_size
         if ctor_count > 0:
             warnings.append(BloatWarning(

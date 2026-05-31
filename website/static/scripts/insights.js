@@ -1,3 +1,55 @@
+// Build the "Savings" rows from analysis results. Pure (no DOM) so it can be
+// unit-tested. Each row is { tag: 'info'|'warn', amt: bytes|null, desc }.
+function computeSavingsRows(ins, warnings, bi) {
+  ins = ins || {};
+  warnings = warnings || [];
+  bi = bi || {};
+  const rows = [];
+
+  // Duplicate symbols: same name and identical size at multiple addresses.
+  // This is only recoverable if the code is byte-identical, so it is a
+  // candidate (info), not a guaranteed saving.
+  const dups = ins.duplicate_symbols || [];
+  if (dups.length > 0) {
+    const saved = dups.reduce((s, d) => s + d.total_size - d.size_each, 0);
+    if (saved > 0)
+      rows.push({ tag: 'info', amt: saved, desc: `${dups.length} symbol(s) share a name and size at multiple addresses. If their code is identical, -flto or --icf=safe can merge them` });
+  }
+
+  // Alignment padding: deliberately not added to the recoverable total because
+  // most padding in code sections is required by the architecture.
+  const pad = ins.padding_waste || {};
+  if (pad.total_bytes > 0)
+    rows.push({ tag: 'info', amt: null, desc: `${fmtB(pad.total_bytes)} alignment padding between symbols` });
+
+  // Duplicate string literals across translation units.
+  const dupStrs = ins.duplicate_strings || [];
+  if (dupStrs.length > 0) {
+    const saved = dupStrs.reduce((s, d) => s + d.wasted_bytes, 0);
+    if (saved > 0)
+      rows.push({ tag: 'info', amt: saved, desc: `${dupStrs.length} string literal(s) duplicated across translation units. Add -fmerge-all-constants to deduplicate` });
+  }
+
+  // Build timestamps: only a reliable non-reproducible-build signal when BOTH a
+  // __DATE__ and a __TIME__ string are present. A lone date- or time-shaped
+  // string in .rodata is too likely to be coincidental to warn on.
+  const stamps = bi.build_stamps || [];
+  const dateStamp = stamps.find(s => s.type === 'date');
+  const timeStamp = stamps.find(s => s.type === 'time');
+  if (dateStamp && timeStamp)
+    rows.push({ tag: 'warn', amt: null, desc: `Non-reproducible build. __DATE__ "${dateStamp.string}", __TIME__ "${timeStamp.string}" found in .rodata. Replace with a build-system variable` });
+
+  for (const w of warnings) {
+    if (!w.symbol) continue;
+    if (w.symbol === '__cxa_throw' || w.symbol === '__cxa_allocate_exception')
+      rows.push({ tag: 'warn', amt: null, desc: 'C++ exceptions linked. Build with -fno-exceptions to remove unwind tables' });
+    else if (w.symbol === '_printf_float' || w.symbol === '_scanf_float')
+      rows.push({ tag: 'warn', amt: w.size > 0 ? w.size : null, desc: `Float printf/scanf linked (${w.symbol}). Remove -u ${w.symbol} from linker flags` });
+  }
+
+  return rows;
+}
+
 function renderInsights(ins, warnings, bi) {
   warnings = warnings || [];
   bi = bi || {};
@@ -8,7 +60,6 @@ function renderInsights(ins, warnings, bi) {
   const hasDups      = ins.duplicate_symbols && ins.duplicate_symbols.length > 0;
   const hasRodata    = ins.rodata_summary && ins.rodata_summary.symbol_count > 0;
   const hasDupStrs   = ins.duplicate_strings && ins.duplicate_strings.length > 0;
-  const hasBuildStamps = bi.build_stamps && bi.build_stamps.length > 0;
 
   if (!hasFiles && !hasDirs && !hasDist && !hasPad && !hasDups && !hasRodata && !hasDupStrs) {
     document.getElementById('card-insights').style.display = '';
@@ -28,45 +79,7 @@ function renderInsights(ins, warnings, bi) {
   let html = '';
 
   {
-    const savingsRows = [];
-
-    // Duplicate symbols - each extra copy is wasted flash; fix with LTO or
-    // linker ICF (--icf=safe). The one kept copy is not counted as savings.
-    if (hasDups) {
-      const saved = ins.duplicate_symbols.reduce((s, d) => s + d.total_size - d.size_each, 0);
-      if (saved > 0)
-        savingsRows.push({ tag: 'info', amt: saved, desc: `${ins.duplicate_symbols.length} symbol(s) in multiple translation units. Link with -flto or --icf=safe to deduplicate` });
-    }
-    // Padding waste - NOT included in the recoverable total because most
-    // padding in code sections (.text) is required by the architecture for
-    // instruction alignment and cannot be removed.  We still call it out.
-    if (hasPad && ins.padding_waste.total_bytes > 0)
-      savingsRows.push({ tag: 'info', amt: null, desc: `${fmtB(ins.padding_waste.total_bytes)} alignment padding between symbols` });
-    // Duplicate strings - wasted because -fmerge-all-constants is not on by
-    // default; enabling it lets the linker merge identical literals across TUs.
-    if (hasDupStrs) {
-      const saved = ins.duplicate_strings.reduce((s, d) => s + d.wasted_bytes, 0);
-      if (saved > 0)
-        savingsRows.push({ tag: 'info', amt: saved, desc: `${ins.duplicate_strings.length} string literal(s) duplicated across translation units. Add -fmerge-all-constants to deduplicate` });
-    }
-    if (hasBuildStamps) {
-      const stamps = bi.build_stamps;
-      const dateStamp = stamps.find(s => s.type === 'date');
-      const timeStamp = stamps.find(s => s.type === 'time');
-      const parts = [];
-      if (dateStamp) parts.push(`__DATE__ "${esc(dateStamp.string)}"`);
-      if (timeStamp) parts.push(`__TIME__ "${esc(timeStamp.string)}"`);
-      savingsRows.push({ tag: 'warn', amt: null, desc: `Non-reproducible build. ${parts.join(', ')} found in .rodata. Replace with a build-system variable` });
-    }
-    for (const w of warnings) {
-      if (w.symbol) {
-        if (w.symbol === '__cxa_throw' || w.symbol === '__cxa_allocate_exception')
-          savingsRows.push({ tag: 'warn', amt: null, desc: 'C++ exceptions linked. Build with -fno-exceptions to remove unwind tables' });
-        else if (w.symbol === '_printf_float' || w.symbol === '_scanf_float')
-          savingsRows.push({ tag: 'warn', amt: w.size > 0 ? w.size : null, desc: `Float printf/scanf linked (${w.symbol}). Remove -u ${w.symbol} from linker flags` });
-      }
-    }
-
+    const savingsRows = computeSavingsRows(ins, warnings, bi);
     if (savingsRows.length > 0) {
       const knownTotal = savingsRows.reduce((s, r) => s + (r.amt || 0), 0);
       html += `<div class="insights-section">
@@ -279,4 +292,8 @@ function insToggleExtra(id, btn) {
   const hidden = el.style.display === 'none';
   el.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Show less' : `Show more`;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { computeSavingsRows };
 }

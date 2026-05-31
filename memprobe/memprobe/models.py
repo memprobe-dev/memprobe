@@ -39,6 +39,15 @@ class Section:
     symbols: list[Symbol] = field(default_factory=list)
     vma: int = 0
     lma: int = 0
+    # False for NOBITS sections (e.g. .bss and address-space reservations like
+    # ESP-IDF's .flash_rodata_dummy): they occupy runtime memory but zero bytes
+    # in the stored image, so they must never be counted toward flash usage.
+    occupies_file: bool = True
+    # SHF_ALLOC: the section is loaded into the target's address space at runtime.
+    # False for link-time-only metadata (.strtab, .symtab, .xt.prop, ...): present
+    # in the ELF but never shipped to the device, so excluded from flash and from
+    # the treemap/address map. Map-file parsers only ever list allocated sections.
+    alloc: bool = True
 
 
 @dataclass
@@ -69,9 +78,22 @@ class MemoryMap:
 
     @property
     def total_flash(self) -> int:
-        """Sum of all flash-resident sections."""
-        flash_types = {SectionType.TEXT, SectionType.RODATA, SectionType.DATA}
-        return sum(s.size for s in self.sections if s.section_type in flash_types)
+        """Bytes the loader copies into flash: every allocated section that
+        stores content in the image.
+
+        Measured by ELF flags, not section names, so vendor-named content
+        sections (e.g. ESP-IDF's .iram0.vectors, .flash.appdesc) are counted
+        too. Two exclusions, both because the bytes are not in the stored image:
+          - non-allocated metadata (.strtab, .symtab, .xt.prop): alloc is False
+          - NOBITS reservations (.bss, .flash_rodata_dummy): occupies_file False
+
+        This counts the loadable content, not the on-disk size of a packaged
+        firmware container (e.g. an esptool .bin with its headers and padding).
+        """
+        return sum(
+            s.size for s in self.sections
+            if s.alloc and s.occupies_file
+        )
 
     @property
     def total_ram(self) -> int:

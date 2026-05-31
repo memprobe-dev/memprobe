@@ -275,6 +275,8 @@ def _mmap_to_json(mmap, warnings) -> dict:
             'address': sec.address,
             'vma': sec.vma,
             'lma': sec.lma,
+            'occupies_file': sec.occupies_file,
+            'alloc': sec.alloc,
         }
         for sec in sorted(mmap.sections, key=lambda s: s.size, reverse=True)
         if sec.size > 0
@@ -529,6 +531,8 @@ def _mmap_from_modal(data: dict, filename: str) -> MemoryMap:
             symbols=symbols,
             vma=sd.get('vma', 0),
             lma=sd.get('lma', 0),
+            occupies_file=sd.get('occupies_file', True),
+            alloc=sd.get('alloc', True),
         ))
 
     regions = [

@@ -267,6 +267,7 @@
     <div class="atab-panel" id="atab-treemap">
       <div class="card">
         <div class="card-hd"><span class="card-title">Memory treemap</span></div>
+        <div style="font-size:11px;color:var(--text3);margin:-4px 0 8px">Shows sections that occupy the device: flash content and RAM. Link-time-only metadata (symbol/string tables, debug info) and address-space reservations that store no bytes are excluded.</div>
         <div class="breadcrumb" id="bc">
           <span class="bc-link" onclick="tmZoomOut()">firmware</span>
         </div>
@@ -423,9 +424,25 @@
             <span class="cg-stat-pill cg-stat-calledby"><span id="cg-stat-calledby">0</span> callers</span>
             <span class="cg-stat-pill cg-stat-calls"><span id="cg-stat-calls">0</span> callees</span>
           </div>
+          <div class="cg-graph-toolbar">
+            <div class="cg-depth-ctl" role="group" aria-label="Neighborhood depth">
+              <span class="cg-tool-label">Depth</span>
+              <button class="cg-depth-btn" data-depth="1" onclick="cgSetDepth(1)">1</button>
+              <button class="cg-depth-btn" data-depth="2" onclick="cgSetDepth(2)">2</button>
+              <button class="cg-depth-btn" data-depth="3" onclick="cgSetDepth(3)">3</button>
+            </div>
+            <button class="cg-tool-btn" id="cg-overview-btn" onclick="cgToggleOverview()">Full graph</button>
+            <button class="cg-tool-btn" id="cg-fit-btn" onclick="cgFit()" title="Fit graph to view">Fit</button>
+            <div class="cg-legend">
+              <span class="cg-legend-item"><i class="cg-dot cg-dot-up"></i>callers</span>
+              <span class="cg-legend-item"><i class="cg-dot cg-dot-down"></i>callees</span>
+              <span class="cg-legend-item cg-legend-size">node size = flash bytes</span>
+            </div>
+          </div>
           <div class="cg-graph-wrap">
             <svg id="cg-graph" class="cg-graph"></svg>
           </div>
+          <div class="cg-graph-hint" id="cg-graph-hint"></div>
 
           <!-- Two-column lists -->
           <div class="cg-cols">
@@ -452,6 +469,7 @@
     </div><!-- /atab-callgraph -->
 
     <div class="addr-tooltip" id="addr-tooltip"></div>
+    <div class="cg-tooltip" id="cg-tooltip"></div>
 
     {% if is_authenticated %}
     <!-- Tab: Export & share -->

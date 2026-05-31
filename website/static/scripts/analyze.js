@@ -357,8 +357,8 @@ function renderResults(d, histBuildId) {
   const kpiEl = document.getElementById('kpi-row');
   const otaSub = (() => { const ota = (d.binary_info||{}).ota_estimate; return ota && ota.compressed_bytes ? `~${fmtB(ota.compressed_bytes)} OTA` : ''; })();
   kpiEl.innerHTML = `
-    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_flash}"><div class="kpi-label">Flash</div><div class="kpi-val" id="kv-flash">0 B</div><div class="kpi-sub">${otaSub}</div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-flash"></div></div></div>
-    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_ram}"><div class="kpi-label">RAM</div><div class="kpi-val" id="kv-ram">0 B</div><div class="kpi-sub"></div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-ram"></div></div></div>
+    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_flash}" title="Loadable content placed in flash: every allocated section that stores bytes in the image. Measured from ELF section flags, not the size of a packaged container such as an esptool .bin, which adds bootloader headers and padding."><div class="kpi-label">Flash</div><div class="kpi-val" id="kv-flash">0 B</div><div class="kpi-sub">${otaSub}</div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-flash"></div></div></div>
+    <div class="kpi kpi-has-bar" data-kpi-bytes="${d.total_ram}" title="Static RAM the linker reserves: .data + .bss, plus any heap/stack sections the linker sizes explicitly. Runtime heap and stack growth are not included because they are not known at link time."><div class="kpi-label">RAM</div><div class="kpi-val" id="kv-ram">0 B</div><div class="kpi-sub"></div><div class="kpi-bar-track"><div class="kpi-bar-fill kpi-bar-ram"></div></div></div>
     <div class="kpi"><div class="kpi-label">Sections</div><div class="kpi-val" id="kv-sections">0</div><div class="kpi-sub">${d.symbol_count.toLocaleString()} symbols</div></div>
     ${d.warnings.length ? `<div class="kpi warn"><div class="kpi-label">Warnings</div><div class="kpi-val" id="kv-warnings">0</div></div>` : ''}
   `;

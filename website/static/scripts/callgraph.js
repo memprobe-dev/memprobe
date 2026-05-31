@@ -1,5 +1,5 @@
 /**
- * Call graph tab — interactive node graph + search.
+ * Call graph tab: interactive node graph + search.
  *
  * Data shape:
  *   _callGraph = {
@@ -41,6 +41,18 @@ function initCallGraph(data) {
   _callGraph = graph;
   _cgNames   = Object.keys(graph).sort();
 
+  // Map function name -> flash bytes so graph nodes can be sized by cost. The
+  // call graph keys may be mangled or demangled, so index under both.
+  _cgSizeByName = {};
+  for (const s of (data.symbols || [])) {
+    if (!s || !s.size) continue;
+    if (s.name)      _cgSizeByName[s.name]      = s.size;
+    if (s.demangled) _cgSizeByName[s.demangled] = s.size;
+  }
+  _cgDepth    = 1;
+  _cgOverview = false;
+  _cgSyncControls();
+
   if (noData) noData.style.display = 'none';
 
   const summary = document.getElementById('cg-summary');
@@ -80,7 +92,7 @@ function _cgRenderEntryPoints() {
   if (roots.length > 30) {
     const more = document.createElement('span');
     more.className = 'cg-ep-more';
-    more.textContent = `+${roots.length - 30} more — search to find them`;
+    more.textContent = `+${roots.length - 30} more, search to find them`;
     list.appendChild(more);
   }
   wrap.style.display = '';
@@ -162,6 +174,9 @@ function cgSelect(name) {
   document.getElementById('cg-search').value = name;
   document.getElementById('cg-clear').style.display = '';
   _cgCloseSuggestions();
+  // Selecting a function always focuses it; leave the whole-graph overview.
+  _cgOverview = false;
+  _cgSyncControls();
   _cgPush(name);
 }
 
@@ -326,216 +341,369 @@ function cgCopyName() {
   }).catch(() => {});
 }
 
-// ── Graph renderer ────────────────────────────────────────────────────────────
+// ── Graph model (pure helpers, unit-tested) ──────────────────────────────────
 
-const _CG_MAX_SIDE = 10;   // max caller/callee nodes shown in graph
-const _CG_COLORS = {
-  callerStroke: '#5b9cf6',
-  callerFill:   'rgba(91,156,246,0.08)',
-  calleeStroke: '#3dd68c',
-  calleeFill:   'rgba(61,214,140,0.08)',
-  centerStroke: '#5b9cf6',
-  edgeCaller:   'rgba(91,156,246,0.45)',
-  edgeCallee:   'rgba(61,214,140,0.45)',
+const _CG_EGO_CAP  = 80;    // max nodes in a focused neighborhood view
+const _CG_FULL_CAP = 400;   // max nodes in the whole-graph overview
+const _CG_LABEL_MAX = 200;  // above this, full-graph labels collapse into noise
+
+// Build the nodes + links to show around `focus`, walking callees downstream and
+// callers upstream up to `depth` hops. Each node keeps the direction it was
+// first reached from: 'focus', 'down' (callee chain), 'up' (caller chain), or
+// 'both'. Pure (no DOM) so it can be unit-tested.
+function cgEgoGraph(graph, focus, depth, cap) {
+  cap = cap || _CG_EGO_CAP;
+  if (!graph || !graph[focus]) return { nodes: [], links: [], truncated: false };
+
+  const side  = new Map([[focus, 'focus']]);
+  const order = [focus];
+  let truncated = false;
+
+  function mark(name, dir) {
+    const prev = side.get(name);
+    if (prev === undefined) {
+      if (side.size >= cap) { truncated = true; return false; }
+      side.set(name, dir);
+      order.push(name);
+      return true;
+    }
+    if (prev !== dir && prev !== 'focus') side.set(name, 'both');
+    return false;
+  }
+
+  function walk(dir, neighborsOf) {
+    let frontier = [focus];
+    for (let d = 0; d < depth; d++) {
+      const next = [];
+      for (const cur of frontier) {
+        const e = graph[cur];
+        if (!e) continue;
+        for (const nb of (neighborsOf(e) || [])) {
+          if (mark(nb, dir)) next.push(nb);
+        }
+      }
+      frontier = next;
+    }
+  }
+  walk('down', e => e.calls);
+  walk('up',   e => e.called_by);
+
+  return _cgLinkUp(graph, order, side, truncated);
+}
+
+// Whole-graph overview: every function, capped for performance. Pure.
+function cgFullGraph(graph, cap) {
+  cap = cap || _CG_FULL_CAP;
+  if (!graph) return { nodes: [], links: [], truncated: false };
+  const all   = Object.keys(graph);
+  const order = all.slice(0, cap);
+  const side  = new Map(order.map(n => [n, 'none']));
+  return _cgLinkUp(graph, order, side, all.length > cap);
+}
+
+// Shared tail of the two builders: collect intra-set call edges and shape nodes.
+function _cgLinkUp(graph, order, side, truncated) {
+  const visible = new Set(order);
+  const links = [];
+  for (const u of order) {
+    const e = graph[u];
+    if (!e) continue;
+    for (const v of (e.calls || [])) {
+      if (visible.has(v)) links.push({ source: u, target: v });
+    }
+  }
+  return {
+    nodes: order.map(n => ({ name: n, side: side.get(n) })),
+    links,
+    truncated,
+  };
+}
+
+// Node radius from function size: sqrt scale so area tracks bytes. Pure.
+function cgNodeRadius(bytes, maxBytes) {
+  const MIN = 6, MAX = 26;
+  if (!bytes || !maxBytes || maxBytes <= 0) return MIN;
+  const r = MIN + (MAX - MIN) * Math.sqrt(bytes / maxBytes);
+  return Math.max(MIN, Math.min(MAX, r));
+}
+
+// ── Graph renderer (d3 force layout) ──────────────────────────────────────────
+
+const _CG_SIDE_COLOR = {
+  focus: '#e8edf5',
+  up:    '#5b9cf6',   // caller chain
+  down:  '#3dd68c',   // callee chain
+  both:  '#b48ce8',   // on both a caller and a callee path
+  none:  '#7a8699',   // overview (direction not meaningful)
 };
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
+let _cgDepth     = 1;
+let _cgOverview  = false;
+let _cgSizeByName = {};
+let _cgSim       = null;
+let _cgZoom      = null;
+let _cgSvgSel    = null;
+let _cgNodes     = [];
+let _cgW = 640, _cgH = 380;
+// Auto-fit frames the graph once after the initial layout settles. Any user
+// gesture (zoom, pan, drag) turns it off so the view never jumps out from
+// under the user when the simulation re-cools.
+let _cgAutoFit   = false;
 
-function _svgEl(tag, attrs) {
-  const el = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-  return el;
+function _cgSizeOf(name) {
+  return _cgSizeByName[name] || 0;
+}
+
+function cgSetDepth(d) {
+  _cgDepth = d;
+  _cgOverview = false;
+  _cgSyncControls();
+  if (_cgCurrent) _cgDrawGraph(_cgCurrent);
+}
+
+function cgToggleOverview() {
+  _cgOverview = !_cgOverview;
+  _cgSyncControls();
+  if (_cgCurrent) _cgDrawGraph(_cgCurrent);
+}
+
+function cgFit() { _cgFitNow(); }
+
+function _cgSyncControls() {
+  document.querySelectorAll('.cg-depth-btn').forEach(b => {
+    b.classList.toggle('cg-depth-active', Number(b.dataset.depth) === _cgDepth && !_cgOverview);
+  });
+  const ov = document.getElementById('cg-overview-btn');
+  if (ov) {
+    ov.classList.toggle('cg-tool-active', _cgOverview);
+    ov.textContent = _cgOverview ? 'Focused' : 'Full graph';
+  }
 }
 
 function _cgDrawGraph(name) {
+  const model = _cgOverview
+    ? cgFullGraph(_callGraph, _CG_FULL_CAP)
+    : cgEgoGraph(_callGraph, name, _cgDepth, _CG_EGO_CAP);
+  _cgRenderForce(model, name);
+  _cgRenderHint(model, name);
+}
+
+function _cgRenderHint(model, name) {
+  const el = document.getElementById('cg-graph-hint');
+  if (!el) return;
+  const n = model.nodes.length;
+  let msg;
+  if (_cgOverview) {
+    msg = `Full call graph: ${n.toLocaleString()} function${n === 1 ? '' : 's'}.`;
+  } else {
+    msg = `${n.toLocaleString()} function${n === 1 ? '' : 's'} within ${_cgDepth} hop${_cgDepth === 1 ? '' : 's'} of ${name}.`;
+  }
+  if (model.truncated) msg += ` Capped${_cgOverview ? ` at ${_CG_FULL_CAP}` : ` at ${_CG_EGO_CAP}`}; refine with search.`;
+  if (_cgOverview && n > _CG_LABEL_MAX) msg += ' Too many to label; hover for names.';
+  msg += ' Click a node to focus, drag to move, scroll to zoom.';
+  el.textContent = msg;
+}
+
+function _cgRenderForce(model, focus) {
   const svg = document.getElementById('cg-graph');
-  if (!svg || !_callGraph || !_callGraph[name]) return;
+  if (!svg || typeof d3 === 'undefined') return;
 
-  const entry    = _callGraph[name];
-  const calls    = (entry.calls     || []).slice(0, _CG_MAX_SIDE);
-  const calledBy = (entry.called_by || []).slice(0, _CG_MAX_SIDE);
-  const moreCallees = (entry.calls     || []).length - calls.length;
-  const moreCallers = (entry.called_by || []).length - calledBy.length;
-
-  const W = svg.parentElement?.clientWidth || 640;
-  const maxSide = Math.max(calls.length, calledBy.length, 1);
-  const NODE_SPACING = 38;
-  const H = Math.max(180, maxSide * NODE_SPACING + 80);
-
-  svg.setAttribute('width',   W);
-  svg.setAttribute('height',  H);
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-
-  // Clear previous content
+  if (_cgSim) { _cgSim.stop(); _cgSim = null; }
+  _cgTipHide();
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  const cx = W / 2;
-  const cy = H / 2;
-  const CENTER_R = 28;
-  const SIDE_R   = 16;
+  const W = svg.parentElement?.clientWidth || 640;
+  const H = 380;
+  _cgW = W; _cgH = H;
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
-  const sideOffset = Math.min(cx - 90, Math.max(160, W * 0.28));
-  const leftX  = cx - sideOffset;
-  const rightX = cx + sideOffset;
+  if (!model.nodes.length) return;
 
-  function sideY(i, total) {
-    if (total <= 1) return cy;
-    const used = Math.min(total * NODE_SPACING, H - 60);
-    const step = used / (total - 1);
-    return (H - used) / 2 + i * step;
-  }
+  const maxBytes = model.nodes.reduce((m, n) => Math.max(m, _cgSizeOf(n.name)), 0);
+  // Full-graph mode shows names too, but only while the count stays legible;
+  // past that they overlap into noise, so fall back to hover-only.
+  const showLabels = !_cgOverview || model.nodes.length <= _CG_LABEL_MAX;
 
-  function truncate(s, max) {
-    return s.length > max ? s.slice(0, max - 1) + '…' : s;
-  }
-
-  // Defs: markers + glow filter
-  const defs = _svgEl('defs', {});
-
-  function makeMarker(id, color) {
-    const m = _svgEl('marker', { id, markerWidth: '7', markerHeight: '7', refX: '5', refY: '3.5', orient: 'auto' });
-    const p = _svgEl('path', { d: 'M0,1 L5,3.5 L0,6 Z', fill: color, opacity: '.8' });
-    m.appendChild(p);
-    return m;
-  }
-  defs.appendChild(makeMarker('arr-callee', _CG_COLORS.calleeStroke));
-  defs.appendChild(makeMarker('arr-caller', _CG_COLORS.callerStroke));
-
-  const filter = _svgEl('filter', { id: 'cg-glow', x: '-30%', y: '-30%', width: '160%', height: '160%' });
-  const blur   = _svgEl('feGaussianBlur', { stdDeviation: '3', result: 'blur' });
-  const merge  = _svgEl('feMerge', {});
-  merge.appendChild(_svgEl('feMergeNode', { in: 'blur' }));
-  merge.appendChild(_svgEl('feMergeNode', { in: 'SourceGraphic' }));
-  filter.appendChild(blur);
-  filter.appendChild(merge);
-  defs.appendChild(filter);
-  svg.appendChild(defs);
-
-  // Edges (drawn first, behind nodes)
-  calledBy.forEach((n, i) => {
-    const y    = sideY(i, calledBy.length + (moreCallers > 0 ? 1 : 0));
-    const cp1x = leftX + sideOffset * 0.45;
-    const cp2x = cx    - sideOffset * 0.45;
-    svg.appendChild(_svgEl('path', {
-      d: `M${leftX + SIDE_R},${y} C${cp1x},${y} ${cp2x},${cy} ${cx - CENTER_R},${cy}`,
-      stroke: _CG_COLORS.edgeCaller, 'stroke-width': '1.5', fill: 'none',
-      'marker-end': 'url(#arr-caller)',
-    }));
-  });
-
-  calls.forEach((n, i) => {
-    const y    = sideY(i, calls.length + (moreCallees > 0 ? 1 : 0));
-    const cp1x = cx     + sideOffset * 0.45;
-    const cp2x = rightX - sideOffset * 0.45;
-    svg.appendChild(_svgEl('path', {
-      d: `M${cx + CENTER_R},${cy} C${cp1x},${cy} ${cp2x},${y} ${rightX - SIDE_R},${y}`,
-      stroke: _CG_COLORS.edgeCallee, 'stroke-width': '1.5', fill: 'none',
-      'marker-end': 'url(#arr-callee)',
-    }));
-  });
-
-  // Side node builder
-  function makeNode(x, y, label, fullName, stroke, fill, clickable) {
-    const g = _svgEl('g', { style: `cursor:${clickable ? 'pointer' : 'default'}`, 'pointer-events': 'all' });
-
-    const circle = _svgEl('circle', {
-      cx: x, cy: y, r: SIDE_R,
-      fill, stroke, 'stroke-width': '1.5',
-    });
-    if (clickable) circle.classList.add('cg-gnode');
-
-    const text = _svgEl('text', {
-      x, y: y + 4, 'text-anchor': 'middle',
-      'font-size': '9', 'font-family': 'var(--mono,monospace)',
-      fill: stroke, 'font-weight': '500', 'pointer-events': 'none',
-    });
-    text.textContent = truncate(label, 15);
-
-    const title = _svgEl('title', {});
-    title.textContent = fullName;
-
-    g.appendChild(circle);
-    g.appendChild(text);
-    g.appendChild(title);
-
-    if (clickable) {
-      g.addEventListener('click', () => cgSelect(fullName));
-    }
-    return g;
-  }
-
-  // Caller nodes (left)
-  calledBy.forEach((n, i) => {
-    const y = sideY(i, calledBy.length + (moreCallers > 0 ? 1 : 0));
-    svg.appendChild(makeNode(leftX, y, n, n, _CG_COLORS.callerStroke, _CG_COLORS.callerFill, !!_callGraph[n]));
-  });
-
-  // Callee nodes (right)
-  calls.forEach((n, i) => {
-    const y = sideY(i, calls.length + (moreCallees > 0 ? 1 : 0));
-    svg.appendChild(makeNode(rightX, y, n, n, _CG_COLORS.calleeStroke, _CG_COLORS.calleeFill, !!_callGraph[n]));
-  });
-
-  // Overflow labels
-  if (moreCallers > 0) {
-    const y = sideY(calledBy.length, calledBy.length + 1);
-    const t = _svgEl('text', { x: leftX, y: y + 4, 'text-anchor': 'middle',
-      'font-size': '10', fill: _CG_COLORS.callerStroke, opacity: '.55',
-      'font-family': 'var(--mono,monospace)' });
-    t.textContent = `+${moreCallers} more`;
-    svg.appendChild(t);
-  }
-  if (moreCallees > 0) {
-    const y = sideY(calls.length, calls.length + 1);
-    const t = _svgEl('text', { x: rightX, y: y + 4, 'text-anchor': 'middle',
-      'font-size': '10', fill: _CG_COLORS.calleeStroke, opacity: '.55',
-      'font-family': 'var(--mono,monospace)' });
-    t.textContent = `+${moreCallees} more`;
-    svg.appendChild(t);
-  }
-
-  // Column labels
-  if (calledBy.length > 0 || moreCallers > 0) {
-    const t = _svgEl('text', { x: leftX, y: '14', 'text-anchor': 'middle',
-      'font-size': '8', 'font-weight': '700', 'letter-spacing': '1.5',
-      fill: _CG_COLORS.callerStroke, opacity: '.7', 'font-family': 'var(--sans,sans-serif)' });
-    t.textContent = 'CALLED BY';
-    svg.appendChild(t);
-  }
-  if (calls.length > 0 || moreCallees > 0) {
-    const t = _svgEl('text', { x: rightX, y: '14', 'text-anchor': 'middle',
-      'font-size': '8', 'font-weight': '700', 'letter-spacing': '1.5',
-      fill: _CG_COLORS.calleeStroke, opacity: '.7', 'font-family': 'var(--sans,sans-serif)' });
-    t.textContent = 'CALLS';
-    svg.appendChild(t);
-  }
-
-  // Center glow ring
-  const glowG = _svgEl('g', { filter: 'url(#cg-glow)' });
-  glowG.appendChild(_svgEl('circle', {
-    cx, cy, r: CENTER_R + 4, fill: 'none',
-    stroke: _CG_COLORS.centerStroke, 'stroke-width': '1', opacity: '.2',
+  const nodes = model.nodes.map(n => ({
+    name: n.name,
+    side: n.side,
+    r: cgNodeRadius(_cgSizeOf(n.name), maxBytes),
   }));
-  svg.appendChild(glowG);
+  const links = model.links.map(l => ({ source: l.source, target: l.target }));
 
-  // Center node (on top, not clickable — already selected)
-  const centerCircle = _svgEl('circle', {
-    cx, cy, r: CENTER_R, fill: 'var(--bg2)',
-    stroke: _CG_COLORS.centerStroke, 'stroke-width': '2',
+  const svgSel = d3.select(svg);
+  _cgSvgSel = svgSel;
+
+  // Arrowhead marker (neutral, sized in user space so it stays crisp on zoom).
+  const defs = svgSel.append('defs');
+  defs.append('marker')
+    .attr('id', 'cg-arrow')
+    .attr('viewBox', '0 0 8 8')
+    .attr('refX', 7).attr('refY', 4)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('markerUnits', 'userSpaceOnUse')
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,1 L7,4 L0,7 Z')
+    .attr('fill', 'var(--text3, #7a8699)');
+
+  const g = svgSel.append('g').attr('class', 'cg-zoom');
+
+  _cgZoom = d3.zoom().scaleExtent([0.2, 4]).on('zoom', e => {
+    g.attr('transform', e.transform);
+    // e.sourceEvent is set only for user-driven zoom/pan, not our programmatic
+    // fit transition. Once the user moves the view, stop auto-fitting.
+    if (e.sourceEvent) _cgAutoFit = false;
   });
-  const centerText = _svgEl('text', {
-    x: cx, y: cy + 4, 'text-anchor': 'middle',
-    'font-size': '9', 'font-family': 'var(--mono,monospace)',
-    fill: 'var(--text)', 'font-weight': '700', 'pointer-events': 'none',
-  });
-  centerText.textContent = truncate(name, 20);
-  svg.appendChild(centerCircle);
-  svg.appendChild(centerText);
+  svgSel.call(_cgZoom).on('dblclick.zoom', null);
+
+  const linkSel = g.append('g')
+    .attr('stroke', 'var(--border2, #3a4150)')
+    .attr('stroke-opacity', 0.7)
+    .selectAll('line')
+    .data(links)
+    .join('line')
+    .attr('stroke-width', 1.4)
+    .attr('marker-end', 'url(#cg-arrow)');
+
+  const nodeSel = g.append('g')
+    .selectAll('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', d => 'cg-gnode' + (d.name === focus ? ' cg-gnode-focus' : ''))
+    .style('cursor', d => d.name === focus ? 'default' : 'pointer')
+    .on('click', (e, d) => { if (d.name !== focus) cgSelect(d.name); })
+    .on('mouseenter', (e, d) => _cgTipShow(e, d.name))
+    .on('mousemove', e => _cgTipMove(e))
+    .on('mouseleave', () => _cgTipHide())
+    .call(_cgDragBehavior());
+
+  nodeSel.filter(d => d.name === focus)
+    .append('circle')
+    .attr('class', 'cg-focus-ring')
+    .attr('r', d => d.r + 5)
+    .attr('fill', 'none')
+    .attr('stroke', _CG_SIDE_COLOR.focus)
+    .attr('stroke-opacity', 0.35)
+    .attr('stroke-width', 1.5);
+
+  nodeSel.append('circle')
+    .attr('r', d => d.r)
+    .attr('fill', d => d.name === focus ? 'var(--bg2, #1a1f29)' : _cgFill(d.side))
+    .attr('stroke', d => _CG_SIDE_COLOR[d.side] || _CG_SIDE_COLOR.none)
+    .attr('stroke-width', d => d.name === focus ? 2 : 1.5);
+
+  if (showLabels) {
+    nodeSel.append('text')
+      .attr('x', d => d.r + 5)
+      .attr('y', 3)
+      .attr('font-size', 10)
+      .attr('font-family', 'var(--mono, monospace)')
+      .attr('fill', d => d.name === focus ? 'var(--text, #e8edf5)' : 'var(--text2, #aab3c0)')
+      .attr('font-weight', d => d.name === focus ? 700 : 400)
+      .attr('pointer-events', 'none')
+      .text(d => _cgTruncate(d.name, 22));
+  }
+
+  const sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.name).distance(d => 60 + d.source.r + d.target.r).strength(0.5))
+    .force('charge', d3.forceManyBody().strength(_cgOverview ? -120 : -260))
+    .force('center', d3.forceCenter(W / 2, H / 2))
+    .force('collide', d3.forceCollide().radius(d => d.r + (showLabels ? 16 : 4)))
+    .on('tick', () => {
+      linkSel
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => { const a = Math.atan2(d.target.y - d.source.y, d.target.x - d.source.x); return d.target.x - Math.cos(a) * (d.target.r + 4); })
+        .attr('y2', d => { const a = Math.atan2(d.target.y - d.source.y, d.target.x - d.source.x); return d.target.y - Math.sin(a) * (d.target.r + 4); });
+      nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+    })
+    .on('end', () => { if (_cgAutoFit) { _cgAutoFit = false; _cgFitNow(); } });
+
+  _cgSim = sim;
+  _cgNodes = nodes;
+  _cgAutoFit = true;  // frame once when this layout settles
+}
+
+function _cgFill(side) {
+  const c = _CG_SIDE_COLOR[side] || _CG_SIDE_COLOR.none;
+  return c + '1f';  // ~12% alpha (hex)
+}
+
+function _cgDragBehavior() {
+  function started(event, d) { _cgAutoFit = false; if (!event.active && _cgSim) _cgSim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+  function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+  function ended(event, d)   { if (!event.active && _cgSim) _cgSim.alphaTarget(0); d.fx = null; d.fy = null; }
+  return d3.drag().on('start', started).on('drag', dragged).on('end', ended);
+}
+
+function _cgFitNow() {
+  if (!_cgNodes.length || !_cgZoom || !_cgSvgSel) return;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of _cgNodes) {
+    if (n.x == null) return;  // simulation has not produced positions yet
+    minX = Math.min(minX, n.x - n.r); maxX = Math.max(maxX, n.x + n.r);
+    minY = Math.min(minY, n.y - n.r); maxY = Math.max(maxY, n.y + n.r);
+  }
+  const w = (maxX - minX) || 1, h = (maxY - minY) || 1;
+  const scale = Math.min(_cgW / (w + 70), _cgH / (h + 70), 2);
+  const tx = _cgW / 2 - scale * (minX + maxX) / 2;
+  const ty = _cgH / 2 - scale * (minY + maxY) / 2;
+  _cgSvgSel.transition().duration(300).call(_cgZoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
+function _cgTruncate(s, max) {
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
+}
+
+function _cgFmtBytes(n) {
+  if (typeof fmtB === 'function') return fmtB(n);
+  return `${n} B`;
+}
+
+// ── Hover tooltip ─────────────────────────────────────────────────────────────
+
+function _cgTipShow(event, name) {
+  const tip = document.getElementById('cg-tooltip');
+  if (!tip) return;
+  const e    = (_callGraph && _callGraph[name]) || {};
+  const sz   = _cgSizeOf(name);
+  const nCallers = (e.called_by || []).length;
+  const nCallees = (e.calls || []).length;
+  const safe = typeof esc === 'function' ? esc(name) : name;
+  const sizeStr = sz ? `<span class="cg-tt-size">${_cgFmtBytes(sz)}</span> · ` : '';
+  tip.innerHTML =
+    `<div class="cg-tt-name">${safe}</div>` +
+    `<div class="cg-tt-meta">${sizeStr}${nCallers} caller${nCallers === 1 ? '' : 's'} · ${nCallees} callee${nCallees === 1 ? '' : 's'}</div>`;
+  tip.style.display = 'block';
+  _cgTipMove(event);
+}
+
+function _cgTipMove(event) {
+  const tip = document.getElementById('cg-tooltip');
+  if (!tip || tip.style.display === 'none') return;
+  // Keep the tooltip on-screen: flip to the left of the cursor near the right edge.
+  const pad = 14;
+  let x = event.clientX + pad;
+  let y = event.clientY - 10;
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  if (x + w > window.innerWidth - 8)  x = event.clientX - pad - w;
+  if (y + h > window.innerHeight - 8) y = window.innerHeight - 8 - h;
+  if (y < 8) y = 8;
+  tip.style.left = x + 'px';
+  tip.style.top  = y + 'px';
+}
+
+function _cgTipHide() {
+  const tip = document.getElementById('cg-tooltip');
+  if (tip) tip.style.display = 'none';
 }
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => {
   const search = document.getElementById('cg-search');
   if (!search) return;
 
@@ -563,6 +731,11 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Redraw graph on window resize.
-window.addEventListener('resize', () => {
+if (typeof window !== 'undefined') window.addEventListener('resize', () => {
   if (_cgCurrent) requestAnimationFrame(() => _cgDrawGraph(_cgCurrent));
 });
+
+// Pure graph-model helpers are exported for unit tests; DOM/d3 rendering is not.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { cgEgoGraph, cgFullGraph, cgNodeRadius };
+}

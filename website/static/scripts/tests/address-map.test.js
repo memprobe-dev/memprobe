@@ -1,7 +1,7 @@
 // Plain node test (no framework) for clusterSections in address-map.js.
 // Run: node website/static/scripts/tests/address-map.test.js
 const assert = require('assert');
-const { clusterSections } = require('../address-map.js');
+const { clusterSections, isFlashSection } = require('../address-map.js');
 
 const addrFn = s => s.vma;
 let passed = 0;
@@ -81,6 +81,41 @@ test('cluster bounds cover all member sections', () => {
   ], addrFn);
   assert.strictEqual(clusters[0].minAddr, 0x1000);
   assert.strictEqual(clusters[0].maxAddr, 0x2000);
+});
+
+// --- isFlashSection: which sections land on the flash ruler --------------
+const fsec = (o) => Object.assign(
+  { name: 'x', type: 'text', size: 100, vma: 0x8000000, lma: 0x8000000, occupies_file: true },
+  o);
+
+test('text and rodata ship to flash', () => {
+  assert.ok(isFlashSection(fsec({ type: 'text' })));
+  assert.ok(isFlashSection(fsec({ type: 'rodata' })));
+});
+
+test('NOBITS reservation (occupies_file false) is not flash', () => {
+  // .flash_rodata_dummy: rodata-typed but stores no image bytes.
+  assert.ok(!isFlashSection(fsec({ type: 'rodata', occupies_file: false })));
+});
+
+test('bss is never on the flash ruler', () => {
+  assert.ok(!isFlashSection(fsec({ type: 'bss', occupies_file: false })));
+});
+
+test('data with a distinct LMA appears on the flash ruler at its LMA', () => {
+  const d = fsec({ type: 'data', vma: 0x20000000, lma: 0x8004000 });
+  assert.ok(isFlashSection(d));
+});
+
+test('data without a separate LMA (lma == vma) stays off the flash ruler', () => {
+  // ESP32 / desktop: bootloader handles the copy, ELF has no distinct LMA.
+  const d = fsec({ type: 'data', vma: 0x20000000, lma: 0x20000000 });
+  assert.ok(!isFlashSection(d));
+});
+
+test('zero-size or zero-lma sections are excluded', () => {
+  assert.ok(!isFlashSection(fsec({ size: 0 })));
+  assert.ok(!isFlashSection(fsec({ lma: 0 })));
 });
 
 console.log(`\n${passed} passed`);

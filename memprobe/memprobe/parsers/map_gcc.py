@@ -121,13 +121,17 @@ def _parse_sections(lines: list[str]) -> list[Section]:
             size = int(m_top.group(3), 16)
             lma_raw = m_top.group(4)
             lma = int(lma_raw, 16) if lma_raw else vma
+            stype = _classify_section(sec_name)
             current_section = Section(
                 name=sec_name,
                 size=size,
                 address=vma,
-                section_type=_classify_section(sec_name),
+                section_type=stype,
                 vma=vma,
                 lma=lma,
+                # Map files list only allocated sections; .bss-type sections
+                # reserve RAM but store no bytes in the image.
+                occupies_file=stype != SectionType.BSS,
             )
             sections.append(current_section)
             pending_sub_name = None

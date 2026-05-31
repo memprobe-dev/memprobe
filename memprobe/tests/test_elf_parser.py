@@ -168,16 +168,97 @@ def test_all_symbols_flat(stm32):
     assert len(from_property) == len(manual)
 
 
-def test_flash_types_counted(stm32):
-    flash_types = {SectionType.TEXT, SectionType.RODATA, SectionType.DATA}
-    expected = sum(s.size for s in stm32.sections if s.section_type in flash_types)
+def test_flash_counted_by_flags(stm32):
+    # total_flash is defined by ELF flags, not section names: every allocated
+    # section that stores bytes in the image (alloc and occupies_file).
+    expected = sum(s.size for s in stm32.sections if s.alloc and s.occupies_file)
     assert stm32.total_flash == expected
+
+
+def test_flash_counts_allocated_content_regardless_of_type():
+    # A vendor-named content section that classifies as OTHER (e.g. ESP-IDF's
+    # .iram0.vectors or an ARM .ARM.exidx) is still shipped to the device, so it
+    # must count toward flash even though its name does not match a flash type.
+    from memprobe.models import MemoryMap, Section, SectionType
+    text = Section(name=".text", size=1000, address=0x8000000,
+                   section_type=SectionType.TEXT)
+    other = Section(name=".ARM.exidx", size=200, address=0x80003e8,
+                    section_type=SectionType.OTHER)
+    mm = MemoryMap(source_file="x.elf", toolchain="gcc", target="arm",
+                   sections=[text, other])
+    assert mm.total_flash == 1200
+
+
+def test_flash_excludes_non_allocated_metadata():
+    # Link-time-only metadata (.xt.prop, .strtab) is present in the ELF but never
+    # shipped to the device: alloc is False, so it must not count toward flash.
+    from memprobe.models import MemoryMap, Section, SectionType
+    text = Section(name=".text", size=1000, address=0x8000000,
+                   section_type=SectionType.TEXT)
+    meta = Section(name=".xt.prop", size=272748, address=0,
+                   section_type=SectionType.OTHER, alloc=False)
+    mm = MemoryMap(source_file="x.elf", toolchain="gcc", target="xtensa",
+                   sections=[text, meta])
+    assert mm.total_flash == 1000
+
+
+def test_alloc_defaults_true():
+    from memprobe.models import Section, SectionType
+    s = Section(name=".data", size=64, address=0x20000000,
+                section_type=SectionType.DATA)
+    assert s.alloc is True
+
+
+def test_nobits_sections_excluded_from_flash():
+    # ESP-IDF's .flash_rodata_dummy is a NOBITS section whose name contains
+    # "rodata", so it classifies as RODATA. It reserves MMU address space but
+    # stores zero bytes in the image, so it must not count toward flash.
+    from memprobe.models import MemoryMap, Section, SectionType
+    real = Section(name=".flash.rodata", size=1000, address=0x3c050120,
+                   section_type=SectionType.RODATA, occupies_file=True)
+    dummy = Section(name=".flash_rodata_dummy", size=327680, address=0x3c000020,
+                    section_type=SectionType.RODATA, occupies_file=False)
+    mm = MemoryMap(source_file="x.elf", toolchain="gcc", target="Xtensa",
+                   sections=[real, dummy])
+    assert mm.total_flash == 1000  # dummy excluded
+
+
+def test_occupies_file_defaults_true():
+    # Map-file parsers do not set this flag; the default must preserve the old
+    # "name-based" flash behavior for sections that do carry content.
+    from memprobe.models import Section, SectionType
+    s = Section(name=".data", size=64, address=0x20000000,
+                section_type=SectionType.DATA)
+    assert s.occupies_file is True
 
 
 def test_ram_types_counted(stm32):
     ram_types = {SectionType.BSS, SectionType.DATA, SectionType.HEAP, SectionType.STACK}
     expected = sum(s.size for s in stm32.sections if s.section_type in ram_types)
     assert stm32.total_ram == expected
+
+
+# -- LMA from PT_LOAD ---------------------------------------------------------
+
+def test_compute_lma_maps_through_segment_offset():
+    # .data lives at RAM VMA 0x20000000 but is initialized from a flash copy
+    # placed right after .text. The PT_LOAD segment carries that offset.
+    from memprobe.parsers.elf import _compute_lma
+    # (p_vaddr, p_paddr, p_memsz): flash text segment and a RAM data segment
+    # whose load address is in flash at 0x8001000.
+    segs = [
+        (0x08000000, 0x08000000, 0x1000),   # in-place flash, lma == vma
+        (0x20000000, 0x08001000, 0x400),    # .data: RAM vma, flash lma
+    ]
+    assert _compute_lma(0x08000200, segs) == 0x08000200  # text: unchanged
+    assert _compute_lma(0x20000000, segs) == 0x08001000  # data: flash copy
+    assert _compute_lma(0x20000100, segs) == 0x08001100  # data + offset
+
+
+def test_compute_lma_falls_back_to_vma_outside_segments():
+    from memprobe.parsers.elf import _compute_lma
+    assert _compute_lma(0x40000000, [(0x0, 0x0, 0x100)]) == 0x40000000
+    assert _compute_lma(0x1234, []) == 0x1234
 
 
 # -- Error handling -----------------------------------------------------------

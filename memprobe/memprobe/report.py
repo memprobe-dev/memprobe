@@ -53,9 +53,22 @@ def _build_treemap_data(mmap: MemoryMap) -> dict:
             "source_location": s.source_location or "",
         }
 
+    # RAM-resident section types: these store no image bytes (occupies_file is
+    # False) but genuinely consume target memory, so they belong on the map.
+    ram_types = {SectionType.BSS, SectionType.DATA, SectionType.HEAP, SectionType.STACK}
+
     children = []
     for sec in mmap.sections:
         if sec.size == 0:
+            continue
+        # Drop sections that are never shipped to the device: link-time-only
+        # metadata (.strtab, .symtab, .xt.prop, not SHF_ALLOC) and image-less
+        # address-space reservations that aren't RAM either (ESP-IDF's
+        # .flash_rodata_dummy). Keeping them would inflate the map with bytes
+        # that exist in neither flash nor RAM.
+        if not sec.alloc:
+            continue
+        if not sec.occupies_file and sec.section_type not in ram_types:
             continue
         sec_type = sec.section_type.value
         sec_node: dict = {

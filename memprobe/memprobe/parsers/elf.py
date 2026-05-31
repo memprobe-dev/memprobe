@@ -24,6 +24,24 @@ from .map_gcc import _classify_section
 
 _SKIP_SECTION_PREFIXES = (".debug", ".comment", ".note", ".ARM.attr")
 _SHF_EXECINSTR = 0x4  # ELF section flag: section contains executable code
+_SHF_ALLOC = 0x2  # ELF section flag: section is loaded into memory at runtime
+
+
+def _compute_lma(sh_addr: int, load_segments: list[tuple[int, int, int]]) -> int:
+    """Map a section's VMA to its load (physical) address through PT_LOAD.
+
+    A section's LMA is its VMA shifted by the containing segment's
+    vaddr->paddr offset:  lma = p_paddr + (sh_addr - p_vaddr).
+    On most desktop ELFs p_paddr == p_vaddr so LMA == VMA; on embedded images
+    (e.g. .data initialized from a flash copy) p_paddr is the flash address.
+    Sections outside every load segment fall back to their VMA.
+
+    load_segments is a list of (p_vaddr, p_paddr, p_memsz) tuples.
+    """
+    for p_vaddr, p_paddr, p_memsz in load_segments:
+        if p_vaddr <= sh_addr < p_vaddr + p_memsz:
+            return p_paddr + (sh_addr - p_vaddr)
+    return sh_addr
 
 # Maps e_machine values to human-readable names
 _MACHINE_NAMES = {
@@ -968,6 +986,17 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
         del dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs
         gc.collect()
 
+        # PT_LOAD segments carry the load (physical) addresses. A section's LMA
+        # is its VMA mapped through the segment that contains it:
+        #   lma = seg.p_paddr + (sec.sh_addr - seg.p_vaddr)
+        # On most desktop ELFs p_paddr == p_vaddr, so LMA == VMA. On embedded
+        # images (e.g. .data initialized from flash) p_paddr is the flash copy.
+        load_segments = [
+            (seg["p_vaddr"], seg["p_paddr"], seg["p_memsz"])
+            for seg in elf.iter_segments()
+            if seg["p_type"] == "PT_LOAD" and seg["p_memsz"] > 0
+        ]
+
         # Collect sections; also track executable section names for the call
         # graph filter so we don't need a separate iter_sections() pass later.
         sections: list[Section] = []
@@ -995,7 +1024,9 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
                 section_type=sec_type,
                 symbols=syms,
                 vma=sec["sh_addr"],
-                lma=sec["sh_addr"],
+                lma=_compute_lma(sec["sh_addr"], load_segments),
+                occupies_file=sec["sh_type"] != "SHT_NOBITS",
+                alloc=bool(sec["sh_flags"] & _SHF_ALLOC),
             ))
             section_names.append(sec.name)
 

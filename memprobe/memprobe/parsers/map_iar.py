@@ -315,6 +315,9 @@ def parse(map_file: Path) -> MemoryMap:
             symbols=syms,
             vma=sd['address'],
             lma=sd['address'],
+            # IAR map lists only allocated sections; .bss-type sections reserve
+            # RAM but store no bytes in the image.
+            occupies_file=stype != SectionType.BSS,
         ))
 
     # -- Build MemoryRegion objects from placement group ranges -----------------

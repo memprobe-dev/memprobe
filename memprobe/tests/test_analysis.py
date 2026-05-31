@@ -62,6 +62,11 @@ class TestBloat:
         messages = " ".join(w.message for w in warnings)
         assert "warning" in levels
         assert "ASan" in messages
+        # The fault claim must be scoped to bare-metal, not asserted absolutely:
+        # an ASan-instrumented host binary runs fine.
+        asan_msg = next(w.message for w in warnings if "ASan" in w.message)
+        assert "bare-metal" in asan_msg
+        assert "Will fault on hardware" not in asan_msg
 
     def test_ubsan_warning(self):
         syms = [_sym("__ubsan_handle_type_mismatch", 50), _sym("app_main", 100)]
@@ -121,6 +126,28 @@ class TestBloat:
         warnings = bloat_analyze(mmap)
         assert any("constructor" in w.message.lower() or "init_array" in w.message.lower()
                    for w in warnings)
+
+    def test_global_ctors_count_uses_32bit_pointer_size(self):
+        # 16-byte .init_array on a 32-bit target holds 4 pointers.
+        init_sec = Section(name=".init_array", size=16, address=0x8002000,
+                           section_type=SectionType.OTHER, symbols=[])
+        mmap = _mmap([init_sec])
+        mmap.binary_info = {"bitness": 32}
+        ctor_warnings = [w for w in bloat_analyze(mmap) if "constructor" in w.message]
+        assert len(ctor_warnings) == 1
+        assert "4 C++ global constructor" in ctor_warnings[0].message
+
+    def test_global_ctors_count_uses_64bit_pointer_size(self):
+        # 16-byte .init_array on a 64-bit target holds 2 pointers, not 4.
+        # Regression: the old heuristic guessed ptr size from symbol sizes and
+        # wrongly reported 4 on any 64-bit binary with no >4 GB symbol.
+        init_sec = Section(name=".init_array", size=16, address=0x8002000,
+                           section_type=SectionType.OTHER, symbols=[])
+        mmap = _mmap([init_sec])
+        mmap.binary_info = {"bitness": 64}
+        ctor_warnings = [w for w in bloat_analyze(mmap) if "constructor" in w.message]
+        assert len(ctor_warnings) == 1
+        assert "2 C++ global constructor" in ctor_warnings[0].message
 
 
 # ============================================================================
@@ -283,7 +310,8 @@ class TestBudget:
         text = Section(name=".text", size=flash, address=0,
                        section_type=SectionType.TEXT, symbols=[])
         bss  = Section(name=".bss",  size=ram,   address=0x20000000,
-                       section_type=SectionType.BSS, symbols=[])
+                       section_type=SectionType.BSS, symbols=[],
+                       occupies_file=False)
         return _mmap([text, bss])
 
     def test_no_violations_when_within_budget(self):
@@ -658,7 +686,8 @@ class TestBudgetExtended:
         text = Section(name=".text", size=flash, address=0,
                        section_type=SectionType.TEXT, symbols=[])
         bss  = Section(name=".bss",  size=ram,   address=0x20000000,
-                       section_type=SectionType.BSS, symbols=[])
+                       section_type=SectionType.BSS, symbols=[],
+                       occupies_file=False)
         return _mmap([text, bss])
 
     def test_both_flash_and_ram_violated_returns_two_violations(self):
@@ -753,3 +782,43 @@ class TestLibrariesExtended:
         mmap = _mmap([_text_sec(syms)])
         libs = detect_libraries(mmap)
         assert libs == []
+
+
+# ============================================================================
+# treemap: only ship-able sections appear on the map
+# ============================================================================
+
+class TestTreemap:
+    def _names(self, mmap):
+        from memprobe.report import _build_treemap_data
+        tree = _build_treemap_data(mmap)
+        return {c["name"] for c in tree["children"]}
+
+    def test_non_allocated_metadata_excluded(self):
+        # .xt.prop is real bytes in the ELF but never shipped (alloc False).
+        text = Section(name=".text", size=1000, address=0x8000000,
+                       section_type=SectionType.TEXT)
+        meta = Section(name=".xt.prop", size=5000, address=0,
+                       section_type=SectionType.OTHER, alloc=False)
+        names = self._names(_mmap([text, meta]))
+        assert ".text" in names
+        assert ".xt.prop" not in names
+
+    def test_image_less_reservation_excluded(self):
+        # .flash_rodata_dummy reserves address space (NOBITS, RODATA) but is
+        # neither flash nor RAM: it must not appear on the map.
+        rodata = Section(name=".flash.rodata", size=2000, address=0x3c050000,
+                         section_type=SectionType.RODATA)
+        dummy = Section(name=".flash_rodata_dummy", size=327680, address=0x3c000000,
+                        section_type=SectionType.RODATA, occupies_file=False)
+        names = self._names(_mmap([rodata, dummy]))
+        assert ".flash.rodata" in names
+        assert ".flash_rodata_dummy" not in names
+
+    def test_bss_kept_despite_no_file_bytes(self):
+        # .bss stores no image bytes (occupies_file False) but genuinely consumes
+        # RAM, so it stays on the map.
+        bss = Section(name=".bss", size=4096, address=0x20000000,
+                      section_type=SectionType.BSS, occupies_file=False)
+        names = self._names(_mmap([bss]))
+        assert ".bss" in names

@@ -381,12 +381,10 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div class="dwarf-required-body">
-            <div class="dwarf-required-title">DWARF 5 debug info required</div>
-            <div class="dwarf-required-desc">Call graph analysis reads <code>DW_TAG_call_site</code> entries from DWARF 5 debug info. Recompile your firmware with:</div>
+            <div class="dwarf-required-title">Call graph unavailable</div>
+            <div class="dwarf-required-desc" id="cg-no-data-reason">No call graph could be extracted from this binary.</div>
             <div class="dwarf-required-flags">
-              <code>-g -gdwarf-5</code>
-              <span class="dwarf-required-sep">·</span>
-              GCC 8+ or Clang 14+
+              Call-site info is emitted by GCC/Clang with <code>-g</code> at <code>-O1</code> or higher (DWARF 4 or 5).
             </div>
           </div>
         </div>

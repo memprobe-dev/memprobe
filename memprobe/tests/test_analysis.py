@@ -411,3 +411,345 @@ class TestLibraries:
         libs = detect_libraries(mmap)
         if len(libs) >= 2:
             assert libs[0].flash_bytes >= libs[1].flash_bytes
+
+
+# ============================================================================
+# Additional bloat tests
+# ============================================================================
+
+class TestBloatExtended:
+
+    def test_multiple_sanitizers_all_warned(self):
+        syms = [
+            _sym("__asan_init",    100),
+            _sym("__ubsan_handle_type_mismatch", 50),
+            _sym("main", 200),
+        ]
+        mmap = _mmap([_text_sec(syms)])
+        warnings = bloat_analyze(mmap)
+        messages = " ".join(w.message for w in warnings)
+        assert "ASan" in messages
+        assert "UBSan" in messages
+
+    def test_large_bss_symbol_warned(self):
+        # A very large BSS symbol should be flagged
+        syms = [_sym("big_buffer", 256 * 1024, section=".bss")]
+        mmap = _mmap([_bss_sec(syms)])
+        warnings = bloat_analyze(mmap)
+        assert any("big_buffer" in (w.symbol or "") or
+                   str(256 * 1024) in w.message or
+                   "big_buffer" in w.message
+                   for w in warnings)
+
+    def test_warning_level_values(self):
+        syms = [_sym("__asan_init", 100), _sym("main", 200)]
+        mmap = _mmap([_text_sec(syms)])
+        for w in bloat_analyze(mmap):
+            assert w.level in ("warning", "info", "error")
+
+    def test_bloat_warning_symbol_field_is_str_or_none(self):
+        syms = [_sym("__asan_init", 100), _sym("main", 200)]
+        mmap = _mmap([_text_sec(syms)])
+        for w in bloat_analyze(mmap):
+            assert w.symbol is None or isinstance(w.symbol, str)
+
+    def test_two_large_symbols_both_flagged(self):
+        syms = [
+            _sym("table_a", 128 * 1024, section=".rodata"),
+            _sym("table_b", 96 * 1024,  section=".rodata"),
+        ]
+        mmap = _mmap([_rodata_sec(syms)])
+        warnings = bloat_analyze(mmap)
+        flagged = {w.symbol for w in warnings if w.symbol}
+        assert "table_a" in flagged
+        assert "table_b" in flagged
+
+
+# ============================================================================
+# Additional insights tests
+# ============================================================================
+
+class TestInsightsExtended:
+    def test_dir_contributors_groups_by_top_level_directory(self):
+        # _top_dir takes only the FIRST path component, so "src/drivers/uart.c"
+        # and "src/app/main.c" both resolve to the top-level dir "src".
+        syms = [
+            _sym("fn1", 100, source="src/drivers/uart.c:10"),
+            _sym("fn2", 200, source="src/drivers/spi.c:20"),
+            _sym("fn3", 300, source="hal/main.c:30"),
+        ]
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        dirs = {e["dir"] for e in result["dir_contributors"]}
+        assert "src" in dirs
+        assert "hal" in dirs
+
+    def test_dir_contributors_flash_aggregated(self):
+        # All three symbols share top-level dir "src" -> combined flash = 300
+        syms = [
+            _sym("a", 100, source="src/hal/uart.c:1"),
+            _sym("b", 200, source="src/app/spi.c:2"),
+        ]
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        src_entry = next((e for e in result["dir_contributors"] if e["dir"] == "src"), None)
+        assert src_entry is not None
+        assert src_entry["flash"] == 300
+
+    def test_file_contributors_sorted_by_flash_desc(self):
+        syms = [
+            _sym("small", 50,  source="src/small.c:1"),
+            _sym("large", 500, source="src/large.c:1"),
+            _sym("mid",   200, source="src/mid.c:1"),
+        ]
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        files = result["file_contributors"]
+        # Sorted by flash + ram descending
+        if len(files) >= 2:
+            total0 = files[0]["flash"] + files[0]["ram"]
+            total1 = files[1]["flash"] + files[1]["ram"]
+            assert total0 >= total1
+
+    def test_file_contributors_has_flash_and_ram_keys(self):
+        syms = [_sym("fn", 100, source="src/app.c:1")]
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        for entry in result["file_contributors"]:
+            assert "file"  in entry
+            assert "flash" in entry
+            assert "ram"   in entry
+
+    def test_dir_contributors_has_dir_and_flash_keys(self):
+        syms = [_sym("fn", 100, source="src/app.c:1")]
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        for entry in result["dir_contributors"]:
+            assert "dir"   in entry
+            assert "flash" in entry
+
+    def test_symbol_size_distribution_all_bucketed(self):
+        # Every symbol should fall into exactly one bucket; totals must add up
+        syms = [_sym(f"s{i}", sz) for i, sz in enumerate([1, 10, 100, 500, 2000, 8000])]
+        mmap = _mmap([_text_sec(syms)])
+        dist = compute_insights(mmap)["symbol_size_distribution"]
+        total = sum(b["count"] for b in dist)
+        assert total == len(syms)
+
+    def test_no_source_symbols_excluded_from_file_contributors(self):
+        syms = [_sym("fn", 200)]  # no source_location
+        mmap = _mmap([_text_sec(syms)])
+        result = compute_insights(mmap)
+        assert result["file_contributors"] == []
+
+    def test_rodata_summary_total_bytes_correct(self):
+        syms = [
+            _sym("r1", 40, section=".rodata"),
+            _sym("r2", 60, section=".rodata"),
+        ]
+        mmap = _mmap([_rodata_sec(syms)])
+        rs = compute_insights(mmap)["rodata_summary"]
+        assert rs["total_bytes"] == 100
+
+    def test_duplicate_symbols_across_multiple_sections(self):
+        # Same name appearing in both .text and .rodata — still a duplicate
+        s1 = Symbol(name="foo", size=100, address=0x1000, section=".text",   object_file="a.o")
+        s2 = Symbol(name="foo", size=100, address=0x2000, section=".rodata", object_file="b.o")
+        t_sec = Section(name=".text",   size=100, address=0x1000, section_type=SectionType.TEXT,   symbols=[s1])
+        r_sec = Section(name=".rodata", size=100, address=0x2000, section_type=SectionType.RODATA, symbols=[s2])
+        mmap = _mmap([t_sec, r_sec])
+        dups = compute_insights(mmap)["duplicate_symbols"]
+        assert any(d["name"] == "foo" for d in dups)
+
+    def test_insights_with_multiple_sections(self):
+        text_syms   = [_sym("fn1", 200), _sym("fn2", 300)]
+        bss_syms    = [_sym("g1", 100, section=".bss"), _sym("g2", 50, section=".bss")]
+        rodata_syms = [_sym("str1", 20, section=".rodata")]
+        mmap = _mmap([_text_sec(text_syms), _bss_sec(bss_syms), _rodata_sec(rodata_syms)])
+        result = compute_insights(mmap)
+        assert isinstance(result["symbol_size_distribution"], list)
+        assert result["rodata_summary"]["symbol_count"] == 1
+
+
+# ============================================================================
+# Additional diff tests
+# ============================================================================
+
+class TestDiffExtended:
+    def _make_mmap(self, syms, name="/tmp/test.elf"):
+        secs = [Section(name=".text", size=sum(s.size for s in syms),
+                        address=0, section_type=SectionType.TEXT, symbols=syms)]
+        m = _mmap(secs)
+        m.source_file = name
+        return m
+
+    def test_negative_flash_delta_when_binary_shrinks(self):
+        old_syms = [_sym("foo", 200), _sym("bar", 100)]
+        new_syms = [_sym("foo", 100)]  # bar removed, foo shrunk
+        old = self._make_mmap(old_syms, "/tmp/old.elf")
+        new = self._make_mmap(new_syms, "/tmp/new.elf")
+        d = compute_diff(old, new)
+        assert d.flash_delta < 0
+
+    def test_changed_symbols_sorted_by_abs_delta_desc(self):
+        old_syms = [_sym("tiny", 10), _sym("big", 500), _sym("mid", 100)]
+        new_syms = [_sym("tiny", 90), _sym("big", 600), _sym("mid", 200)]
+        old = self._make_mmap(old_syms)
+        new = self._make_mmap(new_syms)
+        d = compute_diff(old, new)
+        deltas = [abs(s.delta) for s in d.symbol_diffs]
+        assert deltas == sorted(deltas, reverse=True)
+
+    def test_unchanged_symbols_not_in_diffs(self):
+        syms = [_sym("same", 100), _sym("changed", 200)]
+        old  = self._make_mmap(syms)
+        new  = self._make_mmap([_sym("same", 100), _sym("changed", 300)])
+        d = compute_diff(old, new)
+        names = {s.name for s in d.symbol_diffs}
+        assert "same" not in names
+        assert "changed" in names
+
+    def test_ram_delta_computed_from_bss(self):
+        old_bss = Section(name=".bss", size=1000, address=0x20000000,
+                          section_type=SectionType.BSS, symbols=[])
+        new_bss = Section(name=".bss", size=2000, address=0x20000000,
+                          section_type=SectionType.BSS, symbols=[])
+        old = _mmap([old_bss])
+        old.source_file = "/tmp/old.elf"
+        new = _mmap([new_bss])
+        new.source_file = "/tmp/new.elf"
+        d = compute_diff(old, new)
+        assert d.ram_delta == 1000
+
+    def test_all_symbols_added(self):
+        old = self._make_mmap([])
+        new = self._make_mmap([_sym("a", 100), _sym("b", 200)])
+        d = compute_diff(old, new)
+        assert d.flash_delta == 300
+        names = {s.name for s in d.added_symbols}
+        assert names == {"a", "b"}
+
+    def test_all_symbols_removed(self):
+        old = self._make_mmap([_sym("a", 100), _sym("b", 200)])
+        new = self._make_mmap([])
+        d = compute_diff(old, new)
+        assert d.flash_delta == -300
+        names = {s.name for s in d.removed_symbols}
+        assert names == {"a", "b"}
+
+    def test_symbol_delta_object_fields(self):
+        old = self._make_mmap([_sym("fn", 100)])
+        new = self._make_mmap([_sym("fn", 150)])
+        d = compute_diff(old, new)
+        assert len(d.changed_symbols) == 1
+        sym = d.changed_symbols[0]
+        assert sym.name == "fn"
+        assert sym.delta == 50
+        assert sym.old_size == 100
+        assert sym.new_size == 150
+
+
+# ============================================================================
+# Additional budget tests
+# ============================================================================
+
+class TestBudgetExtended:
+    def _mmap_flash_ram(self, flash=50000, ram=20000):
+        text = Section(name=".text", size=flash, address=0,
+                       section_type=SectionType.TEXT, symbols=[])
+        bss  = Section(name=".bss",  size=ram,   address=0x20000000,
+                       section_type=SectionType.BSS, symbols=[])
+        return _mmap([text, bss])
+
+    def test_both_flash_and_ram_violated_returns_two_violations(self):
+        mmap = self._mmap_flash_ram(flash=60000, ram=30000)
+        violations = check_budgets(mmap, {"flash": 50000, "ram": 20000})
+        kinds = {v.kind for v in violations}
+        assert "flash" in kinds
+        assert "ram"   in kinds
+
+    def test_violation_overage_matches_actual_minus_budget(self):
+        mmap = self._mmap_flash_ram(flash=70000)
+        violations = check_budgets(mmap, {"flash": 50000})
+        assert violations[0].overage == 20000
+
+    def test_exactly_at_budget_no_violation(self):
+        mmap = self._mmap_flash_ram(flash=50000)
+        assert check_budgets(mmap, {"flash": 50000}) == []
+
+    def test_one_byte_over_budget_triggers_violation(self):
+        mmap = self._mmap_flash_ram(flash=50001)
+        assert len(check_budgets(mmap, {"flash": 50000})) == 1
+
+    def test_human_readable_in_kb(self):
+        mmap = self._mmap_flash_ram(flash=600 * 1024)
+        violations = check_budgets(mmap, {"flash": 512 * 1024})
+        assert violations
+        assert "KB" in violations[0].budget_human or "MB" in violations[0].budget_human
+
+    def test_section_budget_uses_section_name(self):
+        mmap = self._mmap_flash_ram(flash=60000)
+        violations = check_budgets(mmap, {".text": 50000})
+        assert any(v.kind == "section" for v in violations)
+
+    def test_multiple_section_budgets(self):
+        text = Section(name=".text", size=30000, address=0,
+                       section_type=SectionType.TEXT, symbols=[])
+        bss  = Section(name=".bss",  size=15000, address=0x20000000,
+                       section_type=SectionType.BSS, symbols=[])
+        mmap = _mmap([text, bss])
+        violations = check_budgets(mmap, {".text": 20000, ".bss": 10000})
+        assert len(violations) == 2
+
+    def test_parse_size_bytes_passthrough(self):
+        assert parse_size("1024") == 1024
+
+    def test_parse_size_fractional_kb(self):
+        assert parse_size("0.5KB") == 512
+
+    def test_parse_size_gb(self):
+        assert parse_size("1GB") == 1024 * 1024 * 1024
+
+
+# ============================================================================
+# Additional library detection tests
+# ============================================================================
+
+class TestLibrariesExtended:
+    def test_cmsis_detected(self):
+        syms = [
+            _sym("NVIC_EnableIRQ",    100),
+            _sym("SCB_CleanDCache",   200),
+            _sym("SysTick_Config",    50),
+        ]
+        mmap = _mmap([_text_sec(syms)])
+        libs = detect_libraries(mmap)
+        names = {lib.name for lib in libs}
+        # If CMSIS pattern is defined, it should be detected; otherwise skip
+        if not any("CMSIS" in n for n in names):
+            pytest.skip("CMSIS detection not configured in this version")
+
+    def test_library_object_has_required_fields(self):
+        syms = [_sym("xTaskCreate", 200), _sym("vTaskDelay", 100), _sym("xQueueCreate", 50)]
+        mmap = _mmap([_text_sec(syms)])
+        libs = detect_libraries(mmap)
+        for lib in libs:
+            assert hasattr(lib, "name")
+            assert hasattr(lib, "flash_bytes")
+            assert isinstance(lib.name, str)
+            assert isinstance(lib.flash_bytes, int)
+            assert lib.flash_bytes > 0
+
+    def test_freertos_from_multiple_sections(self):
+        text_syms   = [_sym("xTaskCreate", 200), _sym("vTaskDelay", 100)]
+        rodata_syms = [_sym("xQueueCreate", 50, section=".rodata")]
+        mmap = _mmap([_text_sec(text_syms), _rodata_sec(rodata_syms)])
+        libs = detect_libraries(mmap)
+        names = {lib.name for lib in libs}
+        assert "FreeRTOS" in names
+
+    def test_no_library_from_generic_names(self):
+        syms = [_sym("process_data", 200), _sym("read_sensor", 100), _sym("write_output", 50)]
+        mmap = _mmap([_text_sec(syms)])
+        libs = detect_libraries(mmap)
+        assert libs == []

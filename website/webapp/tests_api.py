@@ -679,3 +679,365 @@ class TestInputValidation(TestCase):
                 content_type='application/json',
             )
         self.assertEqual(r.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
+# api_share tests
+# ---------------------------------------------------------------------------
+
+class TestApiShare(TestCase):
+    def setUp(self):
+        self.alice = _make_user('alice@share.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_share_missing_analysis_returns_400(self):
+        with HistMock():
+            r = self.client.post(
+                reverse('api_share'),
+                data=json.dumps({'filename': 'fw.elf'}),
+                content_type='application/json',
+            )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('error', r.json())
+
+    def test_share_with_analysis_returns_id(self):
+        mock_save = MagicMock()
+        with patch(_HIST_PATH + '.save_share', mock_save):
+            r = self.client.post(
+                reverse('api_share'),
+                data=json.dumps({'analysis': {'sections': []}, 'filename': 'fw.elf'}),
+                content_type='application/json',
+            )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertIn('id', body)
+        self.assertIsInstance(body['id'], str)
+        self.assertGreater(len(body['id']), 0)
+
+    def test_share_id_is_hex_string(self):
+        with HistMock(save_share=MagicMock()):
+            r = self.client.post(
+                reverse('api_share'),
+                data=json.dumps({'analysis': {'sections': []}}),
+                content_type='application/json',
+            )
+        share_id = r.json()['id']
+        # Must be a valid hex string
+        int(share_id, 16)  # raises ValueError if not hex
+
+    def test_share_passes_user_id_to_save_share(self):
+        mock_save = MagicMock()
+        with patch(_HIST_PATH + '.save_share', mock_save):
+            self.client.post(
+                reverse('api_share'),
+                data=json.dumps({'analysis': {'x': 1}}),
+                content_type='application/json',
+            )
+        call_kwargs = mock_save.call_args
+        self.assertIn(str(self.alice.pk), str(call_kwargs))
+
+    def test_guest_cannot_share(self):
+        anon = Client()
+        with HistMock():
+            r = anon.post(
+                reverse('api_share'),
+                data=json.dumps({'analysis': {'sections': []}}),
+                content_type='application/json',
+            )
+        self.assertEqual(r.status_code, 401)
+
+    def test_share_empty_body_returns_400(self):
+        with HistMock():
+            r = self.client.post(
+                reverse('api_share'),
+                data=json.dumps({}),
+                content_type='application/json',
+            )
+        self.assertEqual(r.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
+# api_diff tests
+# ---------------------------------------------------------------------------
+
+class TestApiDiff(TestCase):
+    def setUp(self):
+        self.alice = _make_user('alice@diff.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_no_inputs_returns_400(self):
+        with HistMock():
+            r = self.client.post(reverse('api_diff'))
+        self.assertEqual(r.status_code, 400)
+
+    def test_only_old_provided_returns_400(self):
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock():
+            r = self.client.post(reverse('api_diff'), data={
+                'old_file': open(_STM32_ELF, 'rb'),
+            })
+        self.assertEqual(r.status_code, 400)
+
+    def test_two_matching_elf_files_returns_200(self):
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock():
+            r = self.client.post(reverse('api_diff'), data={
+                'old_file': open(_STM32_ELF, 'rb'),
+                'new_file': open(_STM32_ELF, 'rb'),
+            })
+        self.assertEqual(r.status_code, 200)
+
+    def test_diff_response_has_expected_keys(self):
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock():
+            r = self.client.post(reverse('api_diff'), data={
+                'old_file': open(_STM32_ELF, 'rb'),
+                'new_file': open(_STM32_ELF, 'rb'),
+            })
+        data = r.json()
+        for key in ('flash_delta', 'ram_delta', 'diffs', 'old_filename', 'new_filename'):
+            self.assertIn(key, data)
+
+    def test_identical_files_flash_delta_zero(self):
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock():
+            r = self.client.post(reverse('api_diff'), data={
+                'old_file': open(_STM32_ELF, 'rb'),
+                'new_file': open(_STM32_ELF, 'rb'),
+            })
+        self.assertEqual(r.json()['flash_delta'], 0)
+
+    def test_diff_requires_auth(self):
+        anon = Client()
+        with HistMock():
+            r = anon.post(reverse('api_diff'))
+        self.assertEqual(r.status_code, 401)
+
+    def test_diff_entry_kind_field(self):
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock():
+            r = self.client.post(reverse('api_diff'), data={
+                'old_file': open(_STM32_ELF, 'rb'),
+                'new_file': open(_STM32_ELF, 'rb'),
+            })
+        for entry in r.json()['diffs']:
+            self.assertIn(entry['kind'], ('added', 'removed', 'changed'))
+
+
+# ---------------------------------------------------------------------------
+# api_history_trend tests
+# ---------------------------------------------------------------------------
+
+class TestApiHistoryTrend(TestCase):
+    def setUp(self):
+        self.alice = _make_user('alice@trend.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_returns_list(self):
+        with HistMock(get_trend=MagicMock(return_value=[])):
+            r = self.client.get(reverse('api_history_trend'))
+        self.assertEqual(r.status_code, 200)
+        self.assertIsInstance(r.json(), list)
+
+    def test_project_param_passed_to_get_trend(self):
+        mock_trend = MagicMock(return_value=[])
+        with patch(_HIST_PATH + '.get_trend', mock_trend):
+            self.client.get(reverse('api_history_trend') + '?project=myproj')
+        mock_trend.assert_called_once_with(
+            user_id=str(self.alice.pk),
+            project='myproj',
+            source_file=None,
+        )
+
+    def test_source_param_passed_to_get_trend(self):
+        mock_trend = MagicMock(return_value=[])
+        with patch(_HIST_PATH + '.get_trend', mock_trend):
+            self.client.get(reverse('api_history_trend') + '?source=fw.elf')
+        mock_trend.assert_called_once_with(
+            user_id=str(self.alice.pk),
+            project=None,
+            source_file='fw.elf',
+        )
+
+    def test_empty_project_param_treated_as_none(self):
+        mock_trend = MagicMock(return_value=[])
+        with patch(_HIST_PATH + '.get_trend', mock_trend):
+            self.client.get(reverse('api_history_trend') + '?project=')
+        mock_trend.assert_called_once_with(
+            user_id=str(self.alice.pk),
+            project=None,
+            source_file=None,
+        )
+
+    def test_post_not_allowed(self):
+        with HistMock():
+            r = self.client.post(reverse('api_history_trend'))
+        self.assertEqual(r.status_code, 405)
+
+
+# ---------------------------------------------------------------------------
+# api_projects and api_project_summaries tests
+# ---------------------------------------------------------------------------
+
+class TestApiProjects(TestCase):
+    def setUp(self):
+        self.alice = _make_user('alice@projects.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_projects_returns_list(self):
+        with HistMock(list_projects=MagicMock(return_value=['proj1', 'proj2'])):
+            r = self.client.get(reverse('api_projects'))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), ['proj1', 'proj2'])
+
+    def test_projects_empty_for_new_user(self):
+        with HistMock(list_projects=MagicMock(return_value=[])):
+            r = self.client.get(reverse('api_projects'))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), [])
+
+    def test_projects_called_with_user_id(self):
+        mock_fn = MagicMock(return_value=[])
+        with patch(_HIST_PATH + '.list_projects', mock_fn):
+            self.client.get(reverse('api_projects'))
+        mock_fn.assert_called_once_with(user_id=str(self.alice.pk))
+
+    def test_project_summaries_returns_list(self):
+        summaries = [{'project': 'p1', 'build_count': 2, 'latest_flash': 50000}]
+        with HistMock(list_project_summaries=MagicMock(return_value=summaries)):
+            r = self.client.get(reverse('api_project_summaries'))
+        self.assertEqual(r.status_code, 200)
+        self.assertIsInstance(r.json(), list)
+
+    def test_project_summaries_called_with_user_id(self):
+        mock_fn = MagicMock(return_value=[])
+        with patch(_HIST_PATH + '.list_project_summaries', mock_fn):
+            self.client.get(reverse('api_project_summaries'))
+        mock_fn.assert_called_once_with(user_id=str(self.alice.pk))
+
+
+# ---------------------------------------------------------------------------
+# _quota_error helper unit tests (via API endpoints)
+# ---------------------------------------------------------------------------
+
+class TestQuotaError(TestCase):
+    """Verify _quota_error is called correctly and returns the right response codes."""
+
+    def setUp(self):
+        self.alice = _make_user('alice@quota.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_at_build_cap_analyze_returns_403(self):
+        builds = [{'id': i, 'source_file': f'/tmp/{i}.elf'} for i in range(10)]
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock(
+            list_builds=MagicMock(return_value=builds),
+            list_projects=MagicMock(return_value=[]),
+        ):
+            r = self.client.post(reverse('api_analyze'), data={
+                'file': open(_STM32_ELF, 'rb'),
+            })
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('error', r.json())
+
+    def test_at_build_cap_error_message_contains_limit(self):
+        builds = [{'id': i, 'source_file': f'/tmp/{i}.elf'} for i in range(10)]
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock(
+            list_builds=MagicMock(return_value=builds),
+            list_projects=MagicMock(return_value=[]),
+        ):
+            r = self.client.post(reverse('api_analyze'), data={
+                'file': open(_STM32_ELF, 'rb'),
+            })
+        self.assertIn('10', r.json()['error'])
+
+    def test_at_project_cap_new_project_returns_403(self):
+        existing = ['proj1', 'proj2']
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock(
+            list_projects=MagicMock(return_value=existing),
+            list_builds=MagicMock(return_value=[]),
+        ):
+            r = self.client.post(reverse('api_analyze'), data={
+                'file': open(_STM32_ELF, 'rb'),
+                'project': 'new_proj',
+            })
+        self.assertEqual(r.status_code, 403)
+
+    def test_existing_project_allowed_despite_cap(self):
+        """Uploading to an already-existing project does not count as a new project."""
+        existing = ['proj1', 'proj2']
+        if not _STM32_ELF.exists():
+            self.skipTest("STM32 fixture not present")
+        with HistMock(
+            list_projects=MagicMock(return_value=existing),
+            list_builds=MagicMock(return_value=[]),
+        ):
+            r = self.client.post(reverse('api_analyze'), data={
+                'file': open(_STM32_ELF, 'rb'),
+                'project': 'proj1',  # already exists
+            })
+        # Should not hit the project cap — may succeed (200) or fail for other reasons
+        self.assertNotEqual(r.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# api_history_build tests
+# ---------------------------------------------------------------------------
+
+class TestApiHistoryBuild(TestCase):
+    def setUp(self):
+        self.alice = _make_user('alice@build.test')
+        self.client = Client()
+        self.client.force_login(self.alice)
+
+    def test_get_existing_build_returns_200(self):
+        build = _build_stub(build_id=42, user_id=str(self.alice.pk))
+        with HistMock(get_build=MagicMock(return_value=build)):
+            r = self.client.get(reverse('api_history_build', kwargs={'build_id': 42}))
+        self.assertEqual(r.status_code, 200)
+
+    def test_get_missing_build_returns_404(self):
+        with HistMock(get_build=MagicMock(return_value=None)):
+            r = self.client.get(reverse('api_history_build', kwargs={'build_id': 999}))
+        self.assertEqual(r.status_code, 404)
+
+    def test_get_build_called_with_user_id(self):
+        mock_gb = MagicMock(return_value=None)
+        with patch(_HIST_PATH + '.get_build', mock_gb):
+            self.client.get(reverse('api_history_build', kwargs={'build_id': 7}))
+        mock_gb.assert_called_once_with(7, user_id=str(self.alice.pk))
+
+    def test_build_response_has_id_field(self):
+        build = _build_stub(build_id=42, user_id=str(self.alice.pk))
+        with HistMock(get_build=MagicMock(return_value=build)):
+            r = self.client.get(reverse('api_history_build', kwargs={'build_id': 42}))
+        self.assertIn('id', r.json())
+
+    def test_delete_existing_build_returns_200(self):
+        with HistMock(delete_build=MagicMock(return_value=True)):
+            r = self.client.delete(
+                reverse('api_history_delete', kwargs={'build_id': 42})
+            )
+        self.assertEqual(r.status_code, 200)
+
+    def test_delete_missing_build_returns_404(self):
+        with HistMock(delete_build=MagicMock(return_value=False)):
+            r = self.client.delete(
+                reverse('api_history_delete', kwargs={'build_id': 999})
+            )
+        self.assertEqual(r.status_code, 404)

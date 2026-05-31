@@ -12,6 +12,7 @@ STM32_ELF  = FIXTURES / "stm32f407_motor_ctrl.elf"
 NRF_ELF    = FIXTURES / "nrf52840_ble_peripheral.elf"
 ESP32_ELF  = FIXTURES / "esp32_wifi_display.elf"
 ESP32C3    = FIXTURES / "esp32c3_sensor_node.elf"
+CG_ELF     = FIXTURES / "firmware_callgraph_x86.elf"
 
 
 # -- Basic MemoryMap structure -------------------------------------------------
@@ -248,3 +249,217 @@ def test_dwarf_cu_cache_cleared_after_walk():
             f"cu._dielist not cleared after parse(); "
             f"{len(dielist)} DIE objects still held in memory"
         )
+
+
+# -- progress_cb --------------------------------------------------------------
+
+def test_progress_cb_called():
+    calls = []
+    parse(STM32_ELF, progress_cb=lambda frac, stage: calls.append((frac, stage)))
+    assert len(calls) > 0
+
+
+def test_progress_cb_fractions_in_range():
+    fracs = []
+    parse(STM32_ELF, progress_cb=lambda frac, stage: fracs.append(frac))
+    for f in fracs:
+        assert 0.0 <= f <= 1.0, f"progress fraction out of range: {f}"
+
+
+def test_progress_cb_stages_are_strings():
+    stages = []
+    parse(STM32_ELF, progress_cb=lambda frac, stage: stages.append(stage))
+    for s in stages:
+        assert isinstance(s, str)
+        assert len(s) > 0
+
+
+def test_progress_cb_monotonically_non_decreasing():
+    fracs = []
+    parse(STM32_ELF, progress_cb=lambda frac, stage: fracs.append(frac))
+    for i in range(1, len(fracs)):
+        assert fracs[i] >= fracs[i - 1], (
+            f"progress went backwards: {fracs[i - 1]} -> {fracs[i]}"
+        )
+
+
+# -- binary_info completeness -------------------------------------------------
+
+def test_binary_info_chip_family(stm32):
+    # STM32 fixture has STM section names so chip_family should be set
+    cf = stm32.binary_info.get("chip_family")
+    assert cf is not None
+    assert isinstance(cf, str)
+    assert len(cf) > 0
+
+
+def test_binary_info_ota_estimate(stm32):
+    ota = stm32.binary_info.get("ota_estimate")
+    assert ota is not None
+    assert isinstance(ota, dict)
+    # Either populated with size data or empty if no suitable segments
+    if ota:
+        assert "raw_bytes"        in ota
+        assert "compressed_bytes" in ota
+        assert "ratio"            in ota
+        assert ota["raw_bytes"] > 0
+        assert ota["compressed_bytes"] > 0
+        assert 0 < ota["ratio"] <= 1.0
+
+
+def test_binary_info_duplicate_strings_structure(stm32):
+    dups = stm32.binary_info.get("duplicate_strings", [])
+    for d in dups:
+        assert "string"        in d
+        assert "count"         in d
+        assert "wasted_bytes"  in d
+        assert d["count"] >= 2
+        assert d["wasted_bytes"] > 0
+
+
+def test_binary_info_build_stamps_structure(stm32):
+    stamps = stm32.binary_info.get("build_stamps", [])
+    for s in stamps:
+        assert "string"  in s
+        assert "type"    in s
+        assert s["type"] in ("date", "time")
+        assert "section" in s
+        assert "address" in s
+
+
+def test_binary_info_arm_features_present(stm32):
+    features = stm32.binary_info.get("arm_features", [])
+    assert isinstance(features, list)
+
+
+def test_binary_info_segments_have_flags(stm32):
+    for seg in stm32.binary_info.get("segments", []):
+        assert "flags" in seg
+        # flags is a human-readable string like "r-x" or a list depending on version
+        assert seg["flags"] is not None
+
+
+# -- symbol consistency -------------------------------------------------------
+
+def test_symbol_sections_exist_in_section_list(stm32):
+    """Every symbol's .section name must appear as an actual section."""
+    section_names = {sec.name for sec in stm32.sections}
+    for sym in stm32.all_symbols:
+        assert sym.section in section_names, (
+            f"Symbol {sym.name!r} references unknown section {sym.section!r}"
+        )
+
+
+def test_symbols_positive_size_for_nrf(nrf):
+    for sym in nrf.all_symbols:
+        assert sym.size > 0
+
+
+def test_symbols_positive_size_for_esp32c3(esp32c3):
+    for sym in esp32c3.all_symbols:
+        assert sym.size > 0
+
+
+def test_all_symbols_count_matches_section_sum(nrf):
+    assert len(nrf.all_symbols) == sum(len(sec.symbols) for sec in nrf.sections)
+
+
+# -- section address sanity ---------------------------------------------------
+
+def test_section_addresses_nonnegative(stm32):
+    for sec in stm32.sections:
+        assert sec.address >= 0
+
+
+def test_section_addresses_nonnegative_nrf(nrf):
+    for sec in nrf.sections:
+        assert sec.address >= 0
+
+
+# -- multi-fixture binary_info ------------------------------------------------
+
+@pytest.mark.parametrize("fixture_path", [
+    STM32_ELF, NRF_ELF, ESP32_ELF, ESP32C3,
+])
+def test_binary_info_present_for_all_fixtures(fixture_path):
+    result = parse(fixture_path)
+    assert result.binary_info is not None
+    assert isinstance(result.binary_info, dict)
+
+
+@pytest.mark.parametrize("fixture_path", [
+    STM32_ELF, NRF_ELF, ESP32_ELF, ESP32C3,
+])
+def test_arch_tag_present_for_all_fixtures(fixture_path):
+    result = parse(fixture_path)
+    assert "arch_tag" in result.binary_info
+    assert result.binary_info["arch_tag"].startswith("EM_")
+
+
+@pytest.mark.parametrize("fixture_path", [
+    STM32_ELF, NRF_ELF, ESP32_ELF, ESP32C3,
+])
+def test_total_flash_positive_for_all_fixtures(fixture_path):
+    result = parse(fixture_path)
+    assert result.total_flash > 0
+
+
+# -- nRF specifics ------------------------------------------------------------
+
+def test_nrf_symbols_have_object_file(nrf):
+    # At least some symbols should carry an object_file annotation
+    with_obj = [s for s in nrf.all_symbols if s.object_file]
+    assert len(with_obj) > 0
+
+
+def test_nrf_binary_info_endian(nrf):
+    assert nrf.binary_info["endian"] in ("little-endian", "big-endian")
+
+
+def test_nrf_chip_family_arm(nrf):
+    cf = nrf.binary_info.get("chip_family", "")
+    assert "ARM" in cf or "Nordic" in cf
+
+
+# -- RISC-V / ESP32-C3 specifics ----------------------------------------------
+
+def test_esp32c3_bitness_32(esp32c3):
+    assert esp32c3.binary_info["bitness"] == 32
+
+
+def test_esp32c3_has_sections(esp32c3):
+    assert len(esp32c3.sections) > 0
+
+
+def test_esp32c3_total_flash_positive(esp32c3):
+    assert esp32c3.total_flash > 0
+
+
+# -- ota_estimate for multiple fixtures ---------------------------------------
+
+@pytest.mark.parametrize("fixture_path", [STM32_ELF, NRF_ELF])
+def test_ota_estimate_structure_all_arm(fixture_path):
+    result = parse(fixture_path)
+    ota = result.binary_info.get("ota_estimate", {})
+    if ota:
+        # Note: zlib overhead can cause compressed_bytes to slightly exceed raw_bytes
+        # for small or highly random data, so we only check they are positive.
+        assert ota["compressed_bytes"] > 0
+        assert ota["raw_bytes"] > 0
+        assert ota["ratio"] > 0
+
+
+# -- source_file recorded -----------------------------------------------------
+
+def test_source_file_recorded(stm32):
+    assert str(STM32_ELF) in stm32.source_file or stm32.source_file == str(STM32_ELF)
+
+
+# -- call_graph field type ----------------------------------------------------
+
+@pytest.mark.parametrize("fixture_path", [
+    STM32_ELF, NRF_ELF, ESP32_ELF, ESP32C3,
+])
+def test_call_graph_field_type(fixture_path):
+    result = parse(fixture_path)
+    assert result.call_graph is None or isinstance(result.call_graph, dict)

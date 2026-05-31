@@ -11,11 +11,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Disassembly-based call graph fallback for ELFs without DWARF call-site info.
+callgraph = [
+    "capstone>=5.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
     "ruff",
     "mypy",
+    "capstone>=5.0",
 ]
 
 [tool.setuptools.packages.find]

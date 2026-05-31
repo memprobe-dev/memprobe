@@ -18,7 +18,6 @@ let _cgSuggestIdx = -1;
 
 function initCallGraph(data) {
   const graph = data.call_graph;
-  console.log('[callgraph] initCallGraph called, call_graph keys:', graph ? Object.keys(graph).length : 'null/missing');
 
   cgClear();
 
@@ -28,6 +27,12 @@ function initCallGraph(data) {
     _callGraph = null;
     _cgNames   = [];
     if (noData) noData.style.display = '';
+    // Surface the parser's explicit reason so an absent graph is never silent.
+    const reasonEl = document.getElementById('cg-no-data-reason');
+    if (reasonEl) {
+      const status = (data.binary_info || {}).call_graph_status;
+      reasonEl.textContent = status || 'No call graph could be extracted from this binary.';
+    }
     const expLabel = document.getElementById('exp-callgraph-label');
     if (expLabel) expLabel.style.display = 'none';
     return;

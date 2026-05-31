@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -56,9 +57,8 @@ def _pick_tier(file_size: int) -> str:
     """Pick the smallest Modal tier that fits the estimated RAM for file_size.
 
     Formula: ceil(file_size_mb * 9.4 * 1.3), mapped to tiers:
-      xs=128 MB, sm=300 MB, md=512 MB, lg=1024 MB
+      xs=128 MB, sm=512 MB, md=768 MB, lg=1024 MB
     """
-    import math
     est = max(128, math.ceil((file_size / (1024 * 1024)) * 9.4 * 1.3))
     if est <= 128:
         return 'xs'
@@ -198,6 +198,18 @@ def _uid(request) -> str:
 MAX_UPLOAD_BYTES  = 30 * 1024 * 1024   # 30 MB
 MAX_PROJECTS      = 2
 MAX_BUILDS        = 10
+
+
+def _quota_error(user_id: str, project: str | None = None) -> str | None:
+    """Return an error string if user has hit a quota limit, else None."""
+    if project:
+        projects = hist.list_projects(user_id=user_id)
+        if project not in projects and len(projects) >= MAX_PROJECTS:
+            return f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'
+    builds = hist.list_builds(user_id=user_id)
+    if len(builds) >= MAX_BUILDS:
+        return f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'
+    return None
 
 
 def _is_pro(user) -> bool:
@@ -933,17 +945,10 @@ def _run_analysis_job(job_id: str, file_bytes: bytes, filename: str,
             project_val = project
             result['project'] = project_val
 
-            existing_projects = hist.list_projects(user_id=user_id)
-            if project_val and project_val not in existing_projects and len(existing_projects) >= MAX_PROJECTS:
+            quota_err = _quota_error(user_id, project_val)
+            if quota_err:
                 job.status = AnalysisJob.STATUS_FAILED
-                job.error_message = f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'
-                job.save(update_fields=['status', 'error_message', 'updated_at'])
-                return
-
-            all_builds = hist.list_builds(user_id=user_id)
-            if len(all_builds) >= MAX_BUILDS:
-                job.status = AnalysisJob.STATUS_FAILED
-                job.error_message = f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'
+                job.error_message = quota_err
                 job.save(update_fields=['status', 'error_message', 'updated_at'])
                 return
 
@@ -1001,20 +1006,9 @@ def api_analyze(request):
         uid = _uid(request)
         project = request.POST.get('project', '').strip() or None
 
-        if project:
-            existing_projects = hist.list_projects(user_id=uid)
-            if project not in existing_projects and len(existing_projects) >= MAX_PROJECTS:
-                return JsonResponse(
-                    {'error': f'Free accounts are limited to {MAX_PROJECTS} projects. Delete one to continue.'},
-                    status=403,
-                )
-
-        all_builds = hist.list_builds(user_id=uid)
-        if len(all_builds) >= MAX_BUILDS:
-            return JsonResponse(
-                {'error': f'You have reached the {MAX_BUILDS}-build limit. Delete a build from your history to continue.'},
-                status=403,
-            )
+        quota_err = _quota_error(uid, project)
+        if quota_err:
+            return JsonResponse({'error': quota_err}, status=403)
     else:
         uid = None
         project = None

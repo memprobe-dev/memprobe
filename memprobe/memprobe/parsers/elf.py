@@ -3,9 +3,14 @@
 import array
 import bisect
 import gc
+import logging
 import re
+import struct
 import sys
+import traceback
 import zlib
+
+logger = logging.getLogger(__name__)
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -18,6 +23,7 @@ from ..models import MemoryMap, Section, Symbol, SectionType
 from .map_gcc import _classify_section
 
 _SKIP_SECTION_PREFIXES = (".debug", ".comment", ".note", ".ARM.attr")
+_SHF_EXECINSTR = 0x4  # ELF section flag: section contains executable code
 
 # Maps e_machine values to human-readable names
 _MACHINE_NAMES = {
@@ -34,7 +40,6 @@ _MACHINE_NAMES = {
 
 # Infer chip family from architecture + section name patterns
 def _infer_chip_family(arch: str, section_names: list[str]) -> Optional[str]:
-    names_joined = " ".join(section_names).lower()
     if arch == "EM_XTENSA":
         if any("esp" in n or "iram" in n or "dram" in n for n in section_names):
             return "ESP32 (Xtensa LX6/LX7)"
@@ -84,7 +89,6 @@ def _decode(val) -> str:
 def _extract_die_addr(die, addr_size: int) -> Optional[int]:
     """Extract a static address from a DIE's DW_AT_location (DW_OP_addr) or
     DW_AT_low_pc attribute. Returns None if not a simple absolute address."""
-    import struct
     # DW_AT_low_pc - used on subprograms
     lpc = die.attributes.get("DW_AT_low_pc")
     if lpc is not None:
@@ -95,11 +99,7 @@ def _extract_die_addr(die, addr_size: int) -> Optional[int]:
         return None
     val = loc.value
     # exprloc / block forms store the expression as a list of ints or bytes
-    if isinstance(val, list) and len(val) > addr_size and val[0] == 0x03:
-        raw = bytes(val[1: 1 + addr_size])
-        fmt = "<I" if addr_size == 4 else "<Q"
-        return struct.unpack(fmt, raw)[0]
-    if isinstance(val, (bytes, bytearray)) and len(val) > addr_size and val[0] == 0x03:
+    if isinstance(val, (list, bytes, bytearray)) and len(val) > addr_size and val[0] == 0x03:
         raw = bytes(val[1: 1 + addr_size])
         fmt = "<I" if addr_size == 4 else "<Q"
         return struct.unpack(fmt, raw)[0]
@@ -308,10 +308,8 @@ def _build_dwarf_maps(elf: ELFFile, file_path: Optional[Path] = None, progress_c
         except Exception:
             # Process forking not supported in this environment — fall through
             # to the sequential path below.
-            import traceback as _tb
-            import sys as _sys
             print(f"[memprobe] parallel DWARF parse failed, falling back to sequential: "
-                  f"{_tb.format_exc()}", file=_sys.stderr)
+                  f"{traceback.format_exc()}", file=sys.stderr)
             name_map.clear()
             die_addr_map.clear()
             addr_to_loc.clear()
@@ -474,17 +472,19 @@ _DATE_RE = re.compile(r'^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]
 _TIME_RE = re.compile(r'^\d{2}:\d{2}:\d{2}$')
 
 
-def _find_build_stamps(elf: ELFFile) -> list[dict]:
-    """Scan .rodata sections for __DATE__ and __TIME__ string literals.
+def _analyze_rodata(elf: ELFFile) -> tuple[list[dict], list[dict]]:
+    """Scan .rodata sections once, returning (build_stamps, duplicate_strings).
 
-    These are injected by the C preprocessor when source files use the
-    __DATE__ or __TIME__ macros.  Their presence makes every build produce
-    a different binary even when the source is unchanged, causing spurious
-    diffs in history tracking.
-
-    Returns a list of {string, type, section, address} dicts.
+    Uses data.split(b"\\0") for fast C-level null splitting rather than a
+    byte-by-byte Python loop. Both analyses share a single pass over each
+    section so section data is only read from the ELF once.
     """
+    MIN_DUP_LEN = 5
+    MAX_DUP_LEN = 256
+
+    seen: dict[str, list[tuple[str, int]]] = {}
     stamps: list[dict] = []
+
     for sec in elf.iter_sections():
         if not (sec.name == ".rodata" or sec.name.startswith(".rodata.")):
             continue
@@ -494,29 +494,50 @@ def _find_build_stamps(elf: ELFFile) -> list[dict]:
         except Exception:
             continue
 
-        start = 0
-        for i in range(len(data)):
-            if data[i] == 0:
-                chunk = data[start:i]
-                addr = base_addr + start
-                start = i + 1
-                length = len(chunk)
-                # __DATE__ is exactly 11 chars, __TIME__ is exactly 8 chars
-                if length not in (8, 11):
-                    continue
-                if not all(0x20 <= x <= 0x7E for x in chunk):
-                    continue
-                try:
-                    s = chunk.decode("ascii")
-                except Exception:
-                    continue
+        offset = 0
+        for chunk in data.split(b"\x00"):
+            addr = base_addr + offset
+            length = len(chunk)
+            offset += length + 1  # account for the null terminator
+
+            if length == 0:
+                continue
+            if not all(0x20 <= x <= 0x7E for x in chunk):
+                continue
+            try:
+                s = chunk.decode("ascii")
+            except Exception:
+                continue
+
+            # Build-stamp detection: __DATE__ = 11 chars, __TIME__ = 8 chars
+            if length in (8, 11):
                 if _DATE_RE.match(s):
                     stamps.append({"string": s, "type": "date",
                                    "section": sec.name, "address": hex(addr)})
                 elif _TIME_RE.match(s):
                     stamps.append({"string": s, "type": "time",
                                    "section": sec.name, "address": hex(addr)})
-    return stamps
+
+            # Duplicate-string accumulation
+            if MIN_DUP_LEN <= length <= MAX_DUP_LEN:
+                if s not in seen:
+                    seen[s] = []
+                seen[s].append((sec.name, addr))
+
+    dup_results: list[dict] = []
+    for s, locs in seen.items():
+        if len(locs) < 2:
+            continue
+        wasted = (len(locs) - 1) * (len(s) + 1)
+        dup_results.append({
+            "string": s[:120],
+            "count": len(locs),
+            "length": len(s) + 1,
+            "wasted_bytes": wasted,
+        })
+    dup_results.sort(key=lambda x: x["wasted_bytes"], reverse=True)
+
+    return stamps, dup_results[:40]
 
 
 def _estimate_ota_size(elf: ELFFile) -> dict:
@@ -560,71 +581,6 @@ def _estimate_ota_size(elf: ELFFile) -> dict:
     }
 
 
-def _find_duplicate_strings(elf: ELFFile) -> list[dict]:
-    """Scan .rodata sections for duplicate null-terminated ASCII string literals.
-
-    Only reports strings that appear at two or more distinct addresses, meaning
-    the linker did NOT merge them (e.g. -fno-merge-constants or cross-section
-    strings). Each entry reports the string, how many copies exist, and how many
-    bytes are wasted by the redundant copies.
-
-    Filters:
-    - Minimum 5 printable ASCII characters (reduces noise from short tokens)
-    - Maximum 256 characters (avoids treating binary blobs as strings)
-    - All bytes must be in the printable ASCII range 0x20-0x7E
-    """
-    MIN_LEN = 5
-    MAX_LEN = 256
-
-    # string_value -> list of (section_name, address)
-    seen: dict[str, list[tuple[str, int]]] = {}
-
-    for sec in elf.iter_sections():
-        if not (sec.name == ".rodata" or sec.name.startswith(".rodata.")):
-            continue
-        try:
-            data = sec.data()
-            base_addr = sec["sh_addr"]
-        except Exception:
-            continue
-
-        start = 0
-        for i in range(len(data)):
-            b = data[i]
-            if b == 0:
-                chunk = data[start:i]
-                string_addr = base_addr + start
-                start = i + 1
-                length = len(chunk)
-                if length < MIN_LEN or length > MAX_LEN:
-                    continue
-                # All bytes must be printable ASCII
-                if not all(0x20 <= x <= 0x7E for x in chunk):
-                    continue
-                try:
-                    s = chunk.decode("ascii")
-                except Exception:
-                    continue
-                if s not in seen:
-                    seen[s] = []
-                seen[s].append((sec.name, string_addr))
-
-    results = []
-    for s, locs in seen.items():
-        if len(locs) < 2:
-            continue
-        wasted = (len(locs) - 1) * (len(s) + 1)
-        results.append({
-            "string": s[:120],
-            "count": len(locs),
-            "length": len(s) + 1,  # include null terminator
-            "wasted_bytes": wasted,
-        })
-
-    results.sort(key=lambda x: x["wasted_bytes"], reverse=True)
-    return results[:40]
-
-
 # ---------------------------------------------------------------------------
 # Call graph
 # ---------------------------------------------------------------------------
@@ -656,17 +612,17 @@ _CALL_MNEMONICS: dict[str, frozenset] = {
 
 
 def _dwarf5_call_graph(elf: ELFFile, addr_to_name: dict[int, str]) -> Optional[dict[str, set[str]]]:
-    """Extract caller->callee edges from DWARF 5 DW_TAG_call_site DIEs.
+    """Extract caller->callee edges from DWARF call-site DIEs.
 
-    Returns a dict of {caller_name: {callee_name, ...}} if DWARF 5 call
-    site info is present, or None if not available (DWARF < 5 or no info).
+    Handles both the DWARF 5 DW_TAG_call_site and GCC's DWARF 4 GNU extension
+    DW_TAG_GNU_call_site. Returns a dict of {caller_name: {callee_name, ...}}
+    if call-site info is present, or None if unavailable (no DWARF, or a
+    toolchain that emits neither tag).
     """
     if not elf.has_dwarf_info():
         return None
 
     dwarf = elf.get_dwarf_info()
-    # DW_TAG_call_site was introduced in DWARF 5.
-    # pyelftools exposes it as the string "DW_TAG_call_site".
     calls: dict[str, set[str]] = defaultdict(set)
     found_any = False
 
@@ -674,14 +630,33 @@ def _dwarf5_call_graph(elf: ELFFile, addr_to_name: dict[int, str]) -> Optional[d
         for cu in dwarf.iter_CUs():
             cu_base = cu.cu_offset
 
-            # Pass 1: build a DIE absolute-offset -> name map for this CU.
-            # DW_AT_call_origin / DW_AT_abstract_origin values are CU-relative
-            # offsets (DW_FORM_ref*), so the absolute offset is cu_base + ref.
-            # Keying die_names by die.offset (absolute) means we look up with
-            # cu_base + ref to match correctly.
+            # Single pass: collect die names and raw call edges simultaneously.
+            # DW_AT_call_origin values are CU-relative refs (DW_FORM_ref*), so
+            # the absolute offset is cu_base + ref. We defer resolution until
+            # after the full CU walk so forward references within the CU work.
             die_names: dict[int, str] = {}
+            raw_edges: list[tuple[str, int]] = []  # (caller_name, cu_relative_ref)
+            current_caller: Optional[str] = None
+            current_caller_depth: int = -1
+            # pyelftools DIEs carry no depth attribute; track it ourselves.
+            # iter_DIEs yields a null DIE to close each child list, so depth
+            # rises after a DIE that has_children and falls on each null DIE.
+            depth = 0
+
             for die in cu.iter_DIEs():
-                if die.tag in ("DW_TAG_subprogram", "DW_TAG_subroutine_type"):
+                if die.is_null():
+                    depth -= 1
+                    if current_caller is not None and depth <= current_caller_depth:
+                        current_caller = None
+                    continue
+
+                tag = die.tag
+
+                # Exit caller scope when depth returns to the caller level or above.
+                if current_caller is not None and depth <= current_caller_depth:
+                    current_caller = None
+
+                if tag in ("DW_TAG_subprogram", "DW_TAG_subroutine_type"):
                     lnk = die.attributes.get("DW_AT_linkage_name")
                     name = _decode(lnk.value) if lnk else None
                     if not name:
@@ -689,38 +664,31 @@ def _dwarf5_call_graph(elf: ELFFile, addr_to_name: dict[int, str]) -> Optional[d
                         name = _decode(nm.value) if nm else None
                     if name:
                         die_names[die.offset] = name
+                    if tag == "DW_TAG_subprogram" and name:
+                        current_caller = name
+                        current_caller_depth = depth
 
-            # Pass 2: walk subprograms and look for call_site children.
-            for die in cu.iter_DIEs():
-                if die.tag != "DW_TAG_subprogram":
-                    continue
-                lnk = die.attributes.get("DW_AT_linkage_name")
-                caller = _decode(lnk.value) if lnk else None
-                if not caller:
-                    nm = die.attributes.get("DW_AT_name")
-                    caller = _decode(nm.value) if nm else None
-                if not caller:
-                    continue
-
-                for child in die.iter_children():
-                    if child.tag != "DW_TAG_call_site":
-                        continue
+                elif tag in ("DW_TAG_call_site", "DW_TAG_GNU_call_site") and current_caller is not None:
                     found_any = True
-                    callee = None
-
-                    # DW_AT_call_origin: CU-relative ref to the callee's DIE.
-                    orig = child.attributes.get("DW_AT_call_origin")
+                    # DW_AT_call_origin: direct call; DW_AT_abstract_origin: inlined.
+                    # GCC's DWARF 4 GNU extension (DW_TAG_GNU_call_site) carries the
+                    # callee reference in DW_AT_abstract_origin instead.
+                    orig = die.attributes.get("DW_AT_call_origin")
                     if orig is not None:
-                        callee = die_names.get(cu_base + int(orig.value))
-
-                    # DW_AT_abstract_origin: used for inlined call sites.
-                    if callee is None:
-                        abst = child.attributes.get("DW_AT_abstract_origin")
+                        raw_edges.append((current_caller, int(orig.value)))
+                    else:
+                        abst = die.attributes.get("DW_AT_abstract_origin")
                         if abst is not None:
-                            callee = die_names.get(cu_base + int(abst.value))
+                            raw_edges.append((current_caller, int(abst.value)))
 
-                    if callee and callee != caller:
-                        calls[caller].add(callee)
+                if die.has_children:
+                    depth += 1
+
+            # Resolve CU-relative refs now that die_names is complete.
+            for caller, raw_ref in raw_edges:
+                callee = die_names.get(cu_base + raw_ref)
+                if callee and callee != caller:
+                    calls[caller].add(callee)
     except Exception as exc:
         print(f"[memprobe] DWARF 5 call graph extraction failed: {exc}", file=sys.stderr)
         return None
@@ -745,14 +713,15 @@ def _capstone_call_graph(
     """
     import capstone  # noqa: PLC0415
 
+    arch_human = _MACHINE_NAMES.get(arch_tag, arch_tag)
     call_mnemonics = _CALL_MNEMONICS.get(arch_tag, frozenset())
     if not call_mnemonics:
-        raise ValueError(f"Call graph disassembly not supported for {arch_tag}")
+        raise ValueError(f"call graph disassembly is not implemented for {arch_human}")
 
     # Build a section data cache: section index -> (base_addr, bytes)
     sec_cache: dict[int, tuple[int, bytes]] = {}
     for i, sec in enumerate(elf.iter_sections()):
-        if sec["sh_type"] in ("SHT_PROGBITS",) and sec["sh_flags"] & 0x4:  # SHF_EXECINSTR
+        if sec["sh_type"] in ("SHT_PROGBITS",) and sec["sh_flags"] & _SHF_EXECINSTR:
             try:
                 sec_cache[i] = (sec["sh_addr"], sec.data())
             except Exception:
@@ -784,16 +753,19 @@ def _capstone_call_graph(
         cs_arm.detail   = True
         cs_instances = None  # handled specially below
     elif arch_tag == "EM_XTENSA":
-        # Xtensa support added in capstone 5; skip gracefully if unavailable.
+        # Xtensa disassembly support landed in capstone 6; older releases lack it.
         if not hasattr(capstone, "CS_ARCH_XTENSA"):
-            raise ValueError("capstone 5+ required for Xtensa call graph")
+            raise ValueError(
+                f"Xtensa call graph disassembly requires capstone 6 or newer "
+                f"(installed capstone {capstone.__version__} has no Xtensa support)"
+            )
         cs_main = capstone.Cs(capstone.CS_ARCH_XTENSA, capstone.CS_MODE_LITTLE_ENDIAN)
         cs_main.detail = True
         cs_instances = cs_main
     else:
         arch_str, mode_str = _CS_ARCH_MAP.get(arch_tag, (None, None))
         if arch_str is None:
-            raise ValueError(f"No capstone mapping for {arch_tag}")
+            raise ValueError(f"capstone has no disassembler for {arch_human}")
         cs_main = capstone.Cs(getattr(capstone, arch_str), getattr(capstone, mode_str))
         cs_main.detail = True
         cs_instances = cs_main
@@ -849,20 +821,23 @@ def _build_call_graph(
     elf: ELFFile,
     arch_tag: str,
     func_symbols: list,
-) -> Optional[dict[str, dict[str, list[str]]]]:
+) -> tuple[Optional[dict[str, dict[str, list[str]]]], str]:
     """Build a call graph for all functions in the ELF.
 
-    Returns a dict: {func_name: {"calls": [...], "called_by": [...]}}
-    Only functions with at least one call relationship are included.
-
-    Returns None if no call information could be extracted.
+    Returns a (graph, status) tuple. graph is a dict
+    {func_name: {"calls": [...], "called_by": [...]}} containing every function
+    with at least one edge, or None when no call information could be extracted.
+    status is always a plain-English explanation of the outcome, suitable for
+    showing the user verbatim, so an absent graph is never silent.
 
     Strategy (in order):
-      1. DWARF 5 DW_TAG_call_site — zero extra dependencies, covers modern
-         toolchains (GCC 8+/Clang 7+ with -gdwarf-5).
-      2. capstone disassembly fallback — covers everything else, requires the
-         capstone package to be installed.
+      1. DWARF call sites (DWARF 5 DW_TAG_call_site or GCC's DWARF 4
+         DW_TAG_GNU_call_site) — zero extra dependencies.
+      2. capstone disassembly fallback — covers other toolchains, requires the
+         capstone package (pip install memprobe[callgraph]).
     """
+    arch_human = _MACHINE_NAMES.get(arch_tag, arch_tag)
+
     # Build addr -> symbol name map. For ARM strip the THUMB bit so lookups
     # work regardless of whether the caller uses the raw or masked address.
     addr_to_name: dict[int, str] = {}
@@ -874,11 +849,11 @@ def _build_call_graph(
     calls_forward: Optional[dict[str, set[str]]] = None
     method_used = "none"
 
-    # --- Strategy 1: DWARF 5 call sites ---
+    # --- Strategy 1: DWARF call sites ---
     dwarf_result = _dwarf5_call_graph(elf, addr_to_name)
     if dwarf_result is not None:
         calls_forward = dwarf_result
-        method_used = "dwarf5"
+        method_used = "dwarf"
 
     # --- Strategy 2: capstone disassembly ---
     if calls_forward is None:
@@ -886,17 +861,30 @@ def _build_call_graph(
             calls_forward = _capstone_call_graph(elf, arch_tag, func_symbols, addr_to_name)
             method_used = "capstone"
         except ImportError:
-            print("[memprobe] capstone not installed — call graph unavailable", file=sys.stderr)
-            return None
+            msg = ("Call graph unavailable: this binary has no DWARF call-site debug "
+                   "info, and the capstone disassembler is not installed. Install it "
+                   "with: pip install memprobe[callgraph]")
+            print(f"[memprobe] {msg}", file=sys.stderr)
+            return None, msg
         except ValueError as exc:
-            print(f"[memprobe] call graph: {exc}", file=sys.stderr)
-            return None
+            msg = (f"Call graph not supported: this binary has no DWARF call-site debug "
+                   f"info, and {exc}.")
+            print(f"[memprobe] {msg}", file=sys.stderr)
+            return None, msg
         except Exception as exc:
-            print(f"[memprobe] call graph disassembly failed: {exc}", file=sys.stderr)
-            return None
+            msg = f"Call graph unavailable: disassembly failed ({exc})."
+            print(f"[memprobe] {msg}", file=sys.stderr)
+            return None, msg
 
     if not calls_forward:
-        return None
+        if method_used == "capstone":
+            msg = (f"Call graph empty: disassembled the {arch_human} code but found no "
+                   f"direct calls, and this binary has no DWARF call-site debug info. "
+                   f"Indirect calls (function pointers, virtual dispatch) are not tracked.")
+        else:
+            msg = ("Call graph empty: DWARF call-site info is present but no caller/callee "
+                   "edges could be resolved.")
+        return None, msg
 
     # Build reverse edges.
     called_by: dict[str, set[str]] = defaultdict(set)
@@ -913,8 +901,11 @@ def _build_call_graph(
             "called_by": sorted(called_by.get(func, set())),
         }
 
-    print(f"[memprobe] call graph: {len(result)} functions, method={method_used}", file=sys.stderr)
-    return result
+    source = ("DWARF call-site debug info" if method_used == "dwarf"
+              else "capstone disassembly of direct calls")
+    status = f"Call graph extracted from {source}: {len(result)} functions."
+    logger.debug("[memprobe] call graph: %d functions, method=%s", len(result), method_used)
+    return result, status
 
 
 def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
@@ -977,10 +968,14 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
         del dwarf_name_map, dwarf_die_addr_map, dwarf_addrs, dwarf_locs
         gc.collect()
 
-        # Collect sections
+        # Collect sections; also track executable section names for the call
+        # graph filter so we don't need a separate iter_sections() pass later.
         sections: list[Section] = []
         section_names: list[str] = []
+        exec_section_names: set[str] = set()
         for i, sec in enumerate(elf.iter_sections()):
+            if sec["sh_flags"] & _SHF_EXECINSTR:
+                exec_section_names.add(sec.name)
             if sec["sh_size"] == 0:
                 continue
             if any(sec.name.startswith(p) for p in _SKIP_SECTION_PREFIXES):
@@ -1082,31 +1077,21 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
         elf_type = elf_type_names.get(elf.header["e_type"], elf.header["e_type"])
 
         _emit(0.88, "call_graph")
-        # Collect executable section names via SHF_EXECINSTR (0x4) flag.
-        # This is architecture-agnostic and avoids hardcoding section prefixes.
-        _SHF_EXECINSTR = 0x4
-        exec_sections: set[str] = {
-            sec.name
-            for sec in elf.iter_sections()
-            if sec["sh_flags"] & _SHF_EXECINSTR
-        }
         func_symbols_for_cg = [
             sym
             for sym in (s for sec in sections for s in sec.symbols)
-            if sym.size > 0 and sym.section in exec_sections
+            if sym.size > 0 and sym.section in exec_section_names
         ]
         call_graph = None
+        call_graph_status = "Call graph unavailable."
         try:
-            print(f"[memprobe] building call graph: arch={arch_tag}, func_symbols={len(func_symbols_for_cg)}", file=sys.stderr)
-            call_graph = _build_call_graph(elf, arch_tag, func_symbols_for_cg)
-            print(f"[memprobe] call graph result: {len(call_graph) if call_graph else None}", file=sys.stderr)
+            call_graph, call_graph_status = _build_call_graph(elf, arch_tag, func_symbols_for_cg)
         except Exception as exc:
-            import traceback
+            call_graph_status = f"Call graph unavailable: {exc}"
             print(f"[memprobe] call graph failed: {exc}\n{traceback.format_exc()}", file=sys.stderr)
         _emit(0.92, "call_graph_done")
 
-        duplicate_strings = _find_duplicate_strings(elf)
-        build_stamps = _find_build_stamps(elf)
+        build_stamps, duplicate_strings = _analyze_rodata(elf)
         ota_estimate = _estimate_ota_size(elf)
 
         binary_info = {
@@ -1127,6 +1112,7 @@ def parse(elf_file: Path, progress_cb=None) -> MemoryMap:
             "duplicate_strings": duplicate_strings,
             "build_stamps": build_stamps,
             "ota_estimate": ota_estimate,
+            "call_graph_status": call_graph_status,
         }
 
         return MemoryMap(
